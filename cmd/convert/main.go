@@ -82,14 +82,17 @@ func writeSeries(metric string, s storage.SeriesSet, schema *parquet.Schema, fie
 		if field.Name == "OBSERVED_TIMESTAMP" || field.Name == "OBSERVED_VALUE" {
 			continue
 		}
-		bloomFilters = append(bloomFilters, parquet.SplitBlockFilter(10, field.Name))
+		bloomFilters = append(bloomFilters, parquet.SplitBlockFilter(10, strings.ToLower(field.Name)))
 	}
 
-	pqWriter := parquet.NewWriter(f, schema, parquet.BloomFilters(bloomFilters...))
+	pqWriter := parquet.NewWriter(f, schema,
+		parquet.BloomFilters(bloomFilters...),
+		parquet.DataPageStatistics(true),
+	)
 	defer pqWriter.Close()
 
+	batchSize := 100_000
 	row := reflect.StructOf(fields)
-	batchSize := 10_000
 	batch := reflect.MakeSlice(reflect.SliceOf(row), batchSize, batchSize)
 
 	i := -1
