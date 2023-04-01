@@ -7,16 +7,20 @@ import (
 	"unicode"
 
 	schemapb "github.com/polarsignals/frostdb/gen/proto/go/frostdb/schema/v1alpha1"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
 )
 
 const (
 	timestampTag = `parquet:",delta,snappy"`
 	valueTag     = `parquet:",split,snappy"`
+	chunkTag     = `parquet:",snappy"`
+	stringTag    = `parquet:",optional,dict,snappy`
 )
 
 var int64Val int64 = 0
 var float64Val float64 = 0
+var byteArrayVal []byte = nil
 
 func Prometheus() *schemapb.Schema {
 	return &schemapb.Schema{
@@ -67,6 +71,45 @@ func For(labels map[string]struct{}) (*parquet.Schema, []reflect.StructField) {
 		},
 	}
 	for field := range labels {
+		if !unicode.IsLetter(rune(field[0])) {
+			continue
+		}
+		tag := fmt.Sprintf(`parquet:"%v,optional,dict,snappy"`, field)
+		structFields = append(structFields, reflect.StructField{
+			Name: strings.ToUpper(field),
+			Type: reflect.TypeOf(field),
+			Tag:  reflect.StructTag(tag),
+		})
+	}
+
+	structType := reflect.StructOf(structFields)
+	structElem := reflect.New(structType)
+
+	return parquet.SchemaOf(structElem.Interface()), structFields
+}
+
+func ChunkSchema(lbls map[string]struct{}) (*parquet.Schema, []reflect.StructField) {
+	structFields := []reflect.StructField{
+		{
+			Name: "TIMESTAMP_FROM",
+			Type: reflect.TypeOf(int64Val),
+			Tag:  reflect.StructTag(timestampTag),
+		},
+		{
+			Name: "TIMESTAMP_TO",
+			Type: reflect.TypeOf(int64Val),
+			Tag:  reflect.StructTag(timestampTag),
+		},
+		{
+			Name: "CHUNK",
+			Type: reflect.TypeOf(byteArrayVal),
+			Tag:  reflect.StructTag(chunkTag),
+		},
+	}
+	for field := range lbls {
+		if field == labels.MetricName {
+			field = "SPECIAL_METRIC_NAME"
+		}
 		if !unicode.IsLetter(rune(field[0])) {
 			continue
 		}
