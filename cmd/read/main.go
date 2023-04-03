@@ -1,13 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"github.com/segmentio/parquet-go"
+	"io"
 	"log"
 	"os"
-
-	"github.com/apache/arrow/go/v10/arrow/memory"
-	"github.com/apache/arrow/go/v10/parquet/file"
-	"github.com/apache/arrow/go/v10/parquet/pqarrow"
 )
 
 func main() {
@@ -17,22 +16,61 @@ func main() {
 	}
 	defer f.Close()
 
-	pqreader, err := file.NewParquetReader(f)
+	fstats, err := f.Stat()
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.Fatalln(err)
 	}
-	defer pqreader.Close()
-
-	fmt.Println(pqreader.MetaData().RowGroups[0].Columns[4])
-
-	_, err = pqarrow.NewFileReader(pqreader, pqarrow.ArrowReadProperties{
-		Parallel:  true,
-		BatchSize: 1000,
-	}, memory.DefaultAllocator)
+	pqreader, err := parquet.OpenFile(f, fstats.Size())
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.Fatalln(err)
 	}
 
+	meta := pqreader.Metadata()
+	fmt.Println(meta.NumRows)
+	schema := pqreader.Schema()
+	columns := schema.Columns()
+	fmt.Println(columns)
 
+	groups := pqreader.RowGroups()
+	for _, group := range groups {
+		chunks := group.ColumnChunks()
+		for _, chunk := range chunks {
+			//bloom := chunk.BloomFilter()
+			columnName := columns[chunk.Column()][0]
+			pages := chunk.Pages()
 
+			index := chunk.ColumnIndex()
+			fmt.Println(index)
+
+			p, err := pages.ReadPage()
+			if err != nil {
+				panic(err)
+			}
+
+			dict := p.Dictionary()
+			if p.Type().String() == "STRING" {
+				values := make([]parquet.Value, 1)
+				indexes := []int32{0}
+				dict.Lookup(indexes, values)
+				fmt.Println(columnName, values)
+			}
+
+			switch page := p.Values().(type) {
+			case parquet.ByteArrayReader:
+				values := make([]byte, 10000*p.NumValues())
+				_, err := page.ReadByteArrays(values)
+				if err != nil && !errors.Is(err, io.EOF) {
+					panic(err)
+				}
+
+				if columnName == "SPECIAL_METRIC_NAME" {
+					fmt.Println(string(values))
+				}
+			case parquet.Int64Reader:
+				fmt.Println(p.Bounds())
+			default:
+				fmt.Println(columnName)
+			}
+		}
+	}
 }

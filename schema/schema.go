@@ -3,11 +3,11 @@ package schema
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"unicode"
 
 	schemapb "github.com/polarsignals/frostdb/gen/proto/go/frostdb/schema/v1alpha1"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
 )
 
@@ -15,7 +15,6 @@ const (
 	timestampTag = `parquet:",delta,snappy"`
 	valueTag     = `parquet:",split,snappy"`
 	chunkTag     = `parquet:",snappy"`
-	stringTag    = `parquet:",optional,dict,snappy`
 )
 
 var int64Val int64 = 0
@@ -36,7 +35,8 @@ func Prometheus() *schemapb.Schema {
 		}, {
 			Name: "timestamp",
 			StorageLayout: &schemapb.StorageLayout{
-				Type: schemapb.StorageLayout_TYPE_INT64,
+				Type:     schemapb.StorageLayout_TYPE_INT64,
+				Encoding: schemapb.StorageLayout_ENCODING_DELTA_BINARY_PACKED,
 			},
 			Dynamic: false,
 		}, {
@@ -57,72 +57,57 @@ func Prometheus() *schemapb.Schema {
 	}
 }
 
-func For(labels map[string]struct{}) (*parquet.Schema, []reflect.StructField) {
-	structFields := []reflect.StructField{
-		{
-			Name: "OBSERVED_TIMESTAMP",
-			Type: reflect.TypeOf(int64Val),
-			Tag:  reflect.StructTag(timestampTag),
-		},
-		{
-			Name: "OBSERVED_VALUE",
-			Type: reflect.TypeOf(float64Val),
-			Tag:  reflect.StructTag(valueTag),
-		},
-	}
-	for field := range labels {
-		if !unicode.IsLetter(rune(field[0])) {
-			continue
-		}
-		tag := fmt.Sprintf(`parquet:"%v,optional,dict,snappy"`, field)
-		structFields = append(structFields, reflect.StructField{
-			Name: strings.ToUpper(field),
-			Type: reflect.TypeOf(field),
-			Tag:  reflect.StructTag(tag),
-		})
-	}
-
-	structType := reflect.StructOf(structFields)
-	structElem := reflect.New(structType)
-
-	return parquet.SchemaOf(structElem.Interface()), structFields
+type ChunkSchema struct {
+	schema      *parquet.Schema
+	labelsIndex map[string]int
 }
 
-func ChunkSchema(lbls map[string]struct{}) (*parquet.Schema, []reflect.StructField) {
+func (c *ChunkSchema) ParquetSchema() *parquet.Schema {
+	return c.schema
+}
+
+func (c *ChunkSchema) ColumnIndex(columnName string) int {
+	return c.labelsIndex[columnName]
+}
+
+func MakeChunkSchema(lbls []string) *ChunkSchema {
 	structFields := []reflect.StructField{
 		{
-			Name: "TIMESTAMP_FROM",
+			Name: "MinT",
 			Type: reflect.TypeOf(int64Val),
 			Tag:  reflect.StructTag(timestampTag),
 		},
 		{
-			Name: "TIMESTAMP_TO",
+			Name: "MaxT",
 			Type: reflect.TypeOf(int64Val),
 			Tag:  reflect.StructTag(timestampTag),
 		},
 		{
-			Name: "CHUNK",
+			Name: "ChunkBytes",
 			Type: reflect.TypeOf(byteArrayVal),
 			Tag:  reflect.StructTag(chunkTag),
 		},
 	}
-	for field := range lbls {
-		if field == labels.MetricName {
-			field = "SPECIAL_METRIC_NAME"
-		}
+
+	labelsIndex := make(map[string]int, 0)
+	sort.Strings(lbls)
+	for _, field := range lbls {
 		if !unicode.IsLetter(rune(field[0])) {
 			continue
 		}
-		tag := fmt.Sprintf(`parquet:"%v,optional,dict,snappy"`, field)
+		tag := fmt.Sprintf(`parquet:"%v,dict,snappy"`, field)
 		structFields = append(structFields, reflect.StructField{
 			Name: strings.ToUpper(field),
 			Type: reflect.TypeOf(field),
 			Tag:  reflect.StructTag(tag),
 		})
+		labelsIndex[field] = len(labelsIndex)
 	}
-
 	structType := reflect.StructOf(structFields)
 	structElem := reflect.New(structType)
 
-	return parquet.SchemaOf(structElem.Interface()), structFields
+	return &ChunkSchema{
+		schema:      parquet.SchemaOf(structElem.Interface()),
+		labelsIndex: labelsIndex,
+	}
 }

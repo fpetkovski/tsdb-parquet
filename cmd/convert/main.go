@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
+	"fpetkovski/prometheus-parquet/pkg/writer"
+	"fpetkovski/prometheus-parquet/schema"
 	"log"
 	"math"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/segmentio/parquet-go"
-
-	"fpetkovski/prometheus-parquet/schema"
 )
 
 func main() {
@@ -25,6 +24,11 @@ func main() {
 
 	blockQuerier, err := tsdb.NewBlockChunkQuerier(block, math.MinInt64, math.MaxInt64)
 	defer blockQuerier.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	allLabels, _, err := blockQuerier.LabelNames()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,77 +45,46 @@ func main() {
 	}
 	log.Println("Converting metrics to parquet", "num_metrics", len(metricNames))
 
-	for _, metric := range metricNames {
-		if metric != "container_cpu_usage_seconds_total" {
-			continue
-		}
-		labelSet := make(map[string]struct{}, 0)
-		matchMetric := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)
-		sset := blockQuerier.Select(true, nil, matchMetric)
-
-		for sset.Next() {
-			lbls := sset.At().Labels()
-			for _, lbl := range lbls {
-				labelSet[lbl.Name] = struct{}{}
-			}
-		}
-
-		schema, fields := schema.ChunkSchema(labelSet)
-		chunkSet := blockQuerier.Select(true, nil, matchMetric)
-		writeSeries(metric, schema, chunkSet, fields)
+	f, err := os.Create(fmt.Sprintf("./out/data.parquet"))
+	if err != nil {
+		log.Fatal(err)
 	}
-}
+	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(allLabels))
+	for _, lbl := range allLabels {
+		bloom := parquet.SplitBlockFilter(10, strings.ToLower(lbl))
+		bloomFilters = append(bloomFilters, bloom)
+	}
 
-func writeSeries(metric string, schema *parquet.Schema, s storage.ChunkSeriesSet, fields []reflect.StructField) {
-	f, err := os.Create(fmt.Sprintf("./out/%s.parquet", metric))
+	schema := schema.MakeChunkSchema(allLabels)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(fields)-2)
-	for _, field := range fields {
-		if field.Name == "TIMESTAMP_FROM" || field.Name == "TIMESTAMP_FROM" || field.Name == "CHUNK" {
-			continue
-		}
-		bloomFilters = append(bloomFilters, parquet.SplitBlockFilter(10, strings.ToLower(field.Name)))
-	}
-
-	fmt.Println("Writing metric", metric)
-	pqWriter := parquet.NewWriter(f, schema,
+	pqWriter := parquet.NewWriter(f,
+		schema.ParquetSchema(),
 		parquet.BloomFilters(bloomFilters...),
 		parquet.DataPageStatistics(true),
 	)
 	defer pqWriter.Close()
 
-	batchSize := 1000
-	row := reflect.StructOf(fields)
-	batch := reflect.MakeSlice(reflect.SliceOf(row), batchSize, batchSize)
+	bufferedWriter := writer.NewBufferedWriter(pqWriter, schema, 5)
+	defer bufferedWriter.Close()
 
-	i := -1
+	for _, metric := range metricNames {
+		matchMetric := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)
+		chunkSet := blockQuerier.Select(true, nil, matchMetric)
+		writeSeries(bufferedWriter, chunkSet)
+	}
+}
+
+func writeSeries(writer *writer.BufferedWriter, s storage.ChunkSeriesSet) {
 	for s.Next() {
 		series := s.At()
 		it := series.Iterator(nil)
 		for it.Next() {
-			i++
-			item := batch.Index(i)
-			for _, lbl := range series.Labels() {
-				if lbl.Name == labels.MetricName {
-					lbl.Name = "SPECIAL_METRIC_NAME"
-				}
-				if strings.HasPrefix(lbl.Name, "_") {
-					continue
-				}
-				item.FieldByName(strings.ToUpper(lbl.Name)).SetString(lbl.Value)
-			}
-
 			chk := it.At()
-			item.FieldByName("TIMESTAMP_FROM").SetInt(chk.MinTime)
-			item.FieldByName("TIMESTAMP_TO").SetInt(chk.MaxTime)
-			item.FieldByName("CHUNK").SetBytes(chk.Chunk.Bytes())
-			pqWriter.Write(item.Interface())
-			if i == batchSize-1 {
-				pqWriter.Flush()
-				i = -1
+			if err := writer.Append(series.Labels(), chk); err != nil {
+				log.Fatal(err)
 			}
 		}
 	}

@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	froststorage "github.com/polarsignals/frostdb/storage"
 	"log"
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/apache/arrow/go/v10/arrow"
 	"github.com/apache/arrow/go/v10/arrow/array"
@@ -48,13 +50,14 @@ func main() {
 	log.Println("Converting metrics to parquet", "num_metrics", len(metricNames))
 
 	// Create a new column store
-	dir := "/Users/fpetkovski/Projects/tsdb-parquet/out"
+	dir := "./out"
 	bucket, err := filesystem.NewBucket(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
 	columnstore, _ := frostdb.New(
 		frostdb.WithBucketStorage(bucket),
+		frostdb.WithStorage(froststorage.NewBucketReaderAt(bucket)),
 		frostdb.WithStoragePath(dir),
 	)
 	defer columnstore.Close()
@@ -62,58 +65,52 @@ func main() {
 	// Open up a database in the column store
 	database, _ := columnstore.DB(context.Background(), "tsdb")
 
+	schema := schema.Prometheus()
+	table, _ := database.Table("metrics", frostdb.NewTableConfig(schema))
+
 	for _, metric := range metricNames {
-		if metric != "prometheus_tsdb_head_series" {
+		if !strings.HasPrefix(metric, "prometheus_") {
 			continue
 		}
+		fmt.Println("Writing metric", metric)
 		matchMetric := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)
 		sset := blockQuerier.Select(true, nil, matchMetric)
-		writeSeries(metric, database, sset)
+		writeSeries(table, sset)
 	}
 }
 
-func writeSeries(metric string, db *frostdb.DB, sset storage.SeriesSet) {
-	allocator := memory.NewGoAllocator()
-	schema := schema.Prometheus()
-
-	table, _ := db.Table(metric, frostdb.NewTableConfig(schema))
-	batch := newSeriesBatch()
+func writeSeries(table *frostdb.Table, sset storage.SeriesSet) {
 	for sset.Next() {
 		series := sset.At()
 		lbls := series.Labels()
 		samples := series.Iterator(nil)
 		for samples.Next() != chunkenc.ValNone {
 			t, v := samples.At()
-			batch.append(lbls, t, v)
-			if batch.size() == 10000 {
-				record := batch.toArrowRecord(allocator)
-				_, err := table.InsertRecord(context.Background(), record)
-				if err != nil {
-					log.Fatal(err)
-				}
-				fmt.Println("Inserting record")
-				record.Release()
-				batch.reset()
+			sample := Sample{T: t, V: v, Labels: lbls}
+			//fmt.Println("Inserting record")
+			_, err := table.Write(context.Background(), sample)
+			if err != nil {
+				log.Fatal(err)
 			}
 		}
 	}
 }
 
-type sample struct {
-	t      int64
-	v      float64
-	labels labels.Labels
+type Sample struct {
+	T      int64
+	V      float64
+	Labels labels.Labels
 }
 
 type samplesBatch struct {
 	labels  map[string]struct{}
-	samples []sample
+	samples []Sample
 }
 
 func newSeriesBatch() *samplesBatch {
 	return &samplesBatch{
 		labels:  make(map[string]struct{}),
-		samples: make([]sample, 0),
+		samples: make([]Sample, 0),
 	}
 }
 
@@ -121,10 +118,10 @@ func (s *samplesBatch) append(lbls labels.Labels, t int64, v float64) {
 	for _, lbl := range lbls {
 		s.labels[lbl.Name] = struct{}{}
 	}
-	s.samples = append(s.samples, sample{
-		t:      t,
-		v:      v,
-		labels: lbls,
+	s.samples = append(s.samples, Sample{
+		T:      t,
+		V:      v,
+		Labels: lbls,
 	})
 }
 
@@ -158,15 +155,15 @@ func (s *samplesBatch) toArrowRecord(allocator memory.Allocator) arrow.Record {
 	for _, s := range s.samples {
 		for i, k := range keys {
 			b := builders[i]
-			v := s.labels.Get(k)
+			v := s.Labels.Get(k)
 			if v != "" {
 				b.AppendString(v)
 			} else {
 				b.AppendNull()
 			}
 		}
-		bt.Append(s.t)
-		bv.Append(s.v)
+		bt.Append(s.T)
+		bv.Append(s.V)
 	}
 
 	arrays := make([]arrow.Array, 0, len(s.labels)+2)
