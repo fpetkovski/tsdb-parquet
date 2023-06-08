@@ -2,31 +2,53 @@ package main
 
 import (
 	"fmt"
-	"fpetkovski/prometheus-parquet/pkg/writer"
-	"fpetkovski/prometheus-parquet/schema"
 	"log"
 	"math"
 	"os"
-	"strings"
+	"runtime/pprof"
+
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+
+	"fpetkovski/prometheus-parquet/db"
+	"fpetkovski/prometheus-parquet/schema"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/segmentio/parquet-go"
 )
 
 func main() {
-	db, block, err := openBlock("data", os.Args[1])
+	parquet.RegisterEncoding(schema.XOREncoding, schema.XorEncoding{})
+
+	pprofFile, err := os.Create("./cpu.prof")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+	defer pprofFile.Close()
+
+	if err := pprof.StartCPUProfile(pprofFile); err != nil {
+		log.Fatal("could not start CPU profile: ", err)
+	}
+	defer pprof.StopCPUProfile()
+
+	tsdbBlock, block, err := openBlock("data", os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer tsdbBlock.Close()
 
 	blockQuerier, err := tsdb.NewBlockChunkQuerier(block, math.MinInt64, math.MaxInt64)
 	defer blockQuerier.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	chunkReader, err := block.Chunks()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer chunkReader.Close()
 
 	allLabels, _, err := blockQuerier.LabelNames()
 	if err != nil {
@@ -45,49 +67,75 @@ func main() {
 	}
 	log.Println("Converting metrics to parquet", "num_metrics", len(metricNames))
 
-	f, err := os.Create(fmt.Sprintf("./out/data.parquet"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(allLabels))
-	for _, lbl := range allLabels {
-		bloom := parquet.SplitBlockFilter(10, strings.ToLower(lbl))
-		bloomFilters = append(bloomFilters, bloom)
-	}
-
-	schema := schema.MakeChunkSchema(allLabels)
+	tableSchema := schema.MakeChunkSchema(allLabels)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pqWriter := parquet.NewWriter(f,
-		schema.ParquetSchema(),
-		parquet.BloomFilters(bloomFilters...),
-		parquet.DataPageStatistics(true),
+	writer := db.NewWriter("./out", allLabels, tableSchema)
+	defer writer.Close()
+
+	ps, err := ir.Postings(index.AllPostingsKey())
+	if err != nil {
+		log.Fatal(err)
+	}
+	var numPostings int64
+	for ps.Next() {
+		numPostings++
+	}
+	log.Println("Converting postings to parquet", "num_postings", numPostings)
+	ps, err = ir.Postings(index.AllPostingsKey())
+	if err != nil {
+		log.Fatal(err)
+	}
+	ps = ir.SortedPostings(ps)
+	var (
+		lblBuilder labels.ScratchBuilder
+		chks       []chunks.Meta
+		seriesID   int64 = -1
 	)
-	defer pqWriter.Close()
 
-	bufferedWriter := writer.NewBufferedWriter(pqWriter, schema, 5)
-	defer bufferedWriter.Close()
+	rows := make([]parquet.Row, 0, 1000)
+	for ps.Next() {
+		fmt.Println("Series", seriesID)
+		rows = rows[:0]
+		seriesID++
+		lblBuilder.Reset()
+		if err := ir.Series(ps.At(), &lblBuilder, &chks); err != nil {
+			log.Fatal(err)
+		}
+		labels := lblBuilder.Labels()
 
-	for _, metric := range metricNames {
-		matchMetric := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metric)
-		chunkSet := blockQuerier.Select(true, nil, matchMetric)
-		writeSeries(bufferedWriter, chunkSet)
-	}
-}
-
-func writeSeries(writer *writer.BufferedWriter, s storage.ChunkSeriesSet) {
-	for s.Next() {
-		series := s.At()
-		it := series.Iterator(nil)
-		for it.Next() {
-			chk := it.At()
-			if err := writer.Append(series.Labels(), chk); err != nil {
+		for _, chunkMeta := range chks {
+			chk, err := chunkReader.Chunk(chunkMeta)
+			if err != nil {
+				log.Fatal(err)
+			}
+			chunk := schema.Chunk{
+				SeriesID:   seriesID,
+				Labels:     labels,
+				MinT:       chunkMeta.MinTime,
+				MaxT:       chunkMeta.MaxTime,
+				ChunkBytes: chk.Bytes(),
+			}
+			if err := writer.Write(chunk); err != nil {
 				log.Fatal(err)
 			}
 		}
 	}
+
+	//pqReader, err := file.NewParquetReader(f)
+	//defer pqReader.Close()
+
+	//metaFile, err := os.Create("./out/meta.thrift")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//defer metaFile.Close()
+
+	//if _, err := pqReader.MetaData().WriteTo(metaFile, nil); err != nil {
+	//	log.Fatal(err)
+	//}
 }
 
 func openBlock(path string, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {

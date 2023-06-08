@@ -3,10 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/segmentio/parquet-go"
 	"io"
 	"log"
 	"os"
+
+	"github.com/segmentio/parquet-go"
 )
 
 func main() {
@@ -25,52 +26,78 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	meta := pqreader.Metadata()
-	fmt.Println(meta.NumRows)
-	schema := pqreader.Schema()
-	columns := schema.Columns()
-	fmt.Println(columns)
+	columnIndex := make(map[int]struct{})
+	columns := pqreader.Schema().Columns()
+	for i, col := range columns {
+		if col[0] == "namespace" {
+			columnIndex[i] = struct{}{}
+		}
+	}
+
+	namespace := parquet.ByteArrayValue([]byte("monitoring"))
 
 	groups := pqreader.RowGroups()
 	for _, group := range groups {
 		chunks := group.ColumnChunks()
 		for _, chunk := range chunks {
-			//bloom := chunk.BloomFilter()
-			columnName := columns[chunk.Column()][0]
-			pages := chunk.Pages()
+			if _, ok := columnIndex[chunk.Column()]; !ok {
+				continue
+			}
 
-			index := chunk.ColumnIndex()
-			fmt.Println(index)
-
-			p, err := pages.ReadPage()
+			hasValue, err := chunk.BloomFilter().Check(namespace)
 			if err != nil {
-				panic(err)
+				log.Fatalln(err)
 			}
-
-			dict := p.Dictionary()
-			if p.Type().String() == "STRING" {
-				values := make([]parquet.Value, 1)
-				indexes := []int32{0}
-				dict.Lookup(indexes, values)
-				fmt.Println(columnName, values)
+			if !hasValue {
+				continue
 			}
+			fmt.Println(hasValue)
+			pages := chunk.Pages()
+			for {
+				page, err := pages.ReadPage()
+				if err == io.EOF {
+					break
+				}
+				values := make([]parquet.Value, page.NumValues())
 
-			switch page := p.Values().(type) {
-			case parquet.ByteArrayReader:
-				values := make([]byte, 10000*p.NumValues())
-				_, err := page.ReadByteArrays(values)
+				_, err = page.Values().ReadValues(values)
 				if err != nil && !errors.Is(err, io.EOF) {
 					panic(err)
 				}
-
-				if columnName == "SPECIAL_METRIC_NAME" {
-					fmt.Println(string(values))
-				}
-			case parquet.Int64Reader:
-				fmt.Println(p.Bounds())
-			default:
-				fmt.Println(columnName)
+				fmt.Println(values)
 			}
+
+			//columnName := columns[chunk.Column()][0]
+			//pages := chunk.Pages()
+			//
+			//index := chunk.ColumnIndex()
+			//fmt.Println(index)
+			//
+			//p, err := pages.ReadPage()
+			//if err != nil {
+			//	panic(err)
+			//}
+			//
+			//dict := p.Dictionary()
+			//if p.Type().String() == "STRING" {
+			//	values := make([]parquet.Value, 1)
+			//	indexes := []int32{0}
+			//	dict.Lookup(indexes, values)
+			//	fmt.Println(columnName, values)
+			//}
+			//
+			//switch page := p.Values().(type) {
+			//case parquet.ByteArrayReader:
+			//	values := make([]byte, 10000*p.NumValues())
+			//	_, err := page.ReadByteArrays(values)
+			//	if err != nil && !errors.Is(err, io.EOF) {
+			//		panic(err)
+			//	}
+			//case parquet.Int64Reader:
+			//	fmt.Println(p.Bounds())
+			//default:
+			//	fmt.Println(columnName)
+			//}
 		}
 	}
 }

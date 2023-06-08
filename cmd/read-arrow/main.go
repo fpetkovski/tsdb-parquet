@@ -31,13 +31,13 @@ func main() {
 
 	freader, err := pqarrow.NewFileReader(pqreader, pqarrow.ArrowReadProperties{
 		Parallel:  true,
-		BatchSize: 1000,
+		BatchSize: 4 * 1024,
 	}, memory.DefaultAllocator)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
 
-	rrs, _, err := freader.GetFieldReaders(context.Background(), []int{5}, []int{0})
+	rrs, _, err := freader.GetFieldReaders(context.Background(), []int{15, 20, 11, 31, 90}, []int{10})
 	if err != nil {
 		log.Fatalln(err)
 	}
