@@ -1,30 +1,107 @@
 package main
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"time"
 
 	"github.com/segmentio/parquet-go"
+	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/gcs"
+	"gopkg.in/yaml.v3"
 )
 
-func main() {
-	f, err := os.Open(os.Args[1])
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
-	defer f.Close()
+var readBufferSize = 16 * 1024
 
-	fstats, err := f.Stat()
+type GCSConfig struct {
+	Bucket string `yaml:"bucket"`
+}
+
+type bucketReader struct {
+	name   string
+	bucket objstore.Bucket
+
+	lastRead             []byte
+	lastReadSectionEnd   int64
+	lastReadSectionStart int64
+}
+
+func newBucketReader(name string, bucket objstore.Bucket) *bucketReader {
+	return &bucketReader{
+		name:   name,
+		bucket: bucket,
+
+		lastReadSectionStart: 0,
+		lastReadSectionEnd:   -1,
+		lastRead:             make([]byte, 0, readBufferSize),
+	}
+}
+
+func (i bucketReader) ReadAt(p []byte, off int64) (n int, err error) {
+	fmt.Printf("READER: Reading %d bytes at offset %d\n", len(p), off)
+	rangeReader, err := i.bucket.GetRange(context.Background(), i.name, off, int64(len(p)))
+	if err != nil {
+		return 0, err
+	}
+
+	from := off - i.lastReadSectionStart
+	to := from + int64(len(p))
+	fmt.Println("READER: Checking cache", from, to)
+	if off >= i.lastReadSectionStart && off+int64(len(p)) <= i.lastReadSectionEnd {
+		fmt.Println("READER: Using cached data", from, to)
+		copy(p, i.lastRead[from:to])
+		return len(p), nil
+	}
+
+	n, err = io.ReadFull(rangeReader, p)
+	if err != nil {
+		return n, err
+	}
+
+	i.lastReadSectionStart = off
+	i.lastReadSectionEnd = off + int64(len(p))
+	fmt.Println("Caching data", i.lastReadSectionStart, i.lastReadSectionEnd)
+	copy(i.lastRead, p)
+	return n, nil
+}
+
+func main() {
+	config := GCSConfig{
+		Bucket: "shopify-o11y-metrics-scratch",
+	}
+	conf, err := yaml.Marshal(config)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	pqreader, err := parquet.OpenFile(f, fstats.Size())
+
+	bucket, err := gcs.NewBucket(context.Background(), nil, conf, "thanos-querier")
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	file := "part.0"
+	reader := newBucketReader(file, bucket)
+	attr, err := bucket.Attributes(context.Background(), file)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	pqreader, err := parquet.OpenFile(
+		reader,
+		attr.Size,
+		//parquet.SkipPageIndex(true),
+		parquet.SkipBloomFilters(true),
+		parquet.ReadBufferSize(readBufferSize),
+	)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	start := time.Now()
+
+	namespace := parquet.ByteArrayValue([]byte("monitoring"))
 
 	columnIndex := make(map[int]struct{})
 	columns := pqreader.Schema().Columns()
@@ -34,7 +111,7 @@ func main() {
 		}
 	}
 
-	namespace := parquet.ByteArrayValue([]byte("monitoring"))
+	fmt.Println("Starting to read pages")
 
 	groups := pqreader.RowGroups()
 	for _, group := range groups {
@@ -44,60 +121,41 @@ func main() {
 				continue
 			}
 
-			hasValue, err := chunk.BloomFilter().Check(namespace)
-			if err != nil {
-				log.Fatalln(err)
+			bloom := chunk.BloomFilter()
+			if bloom != nil {
+				fmt.Println("Checking bloom filter for column", chunk.Column())
+				hasValue, err := chunk.BloomFilter().Check(namespace)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				if !hasValue {
+					continue
+				}
 			}
-			if !hasValue {
-				continue
-			}
-			fmt.Println(hasValue)
+
 			pages := chunk.Pages()
 			for {
 				page, err := pages.ReadPage()
 				if err == io.EOF {
 					break
 				}
-				values := make([]parquet.Value, page.NumValues())
 
-				_, err = page.Values().ReadValues(values)
-				if err != nil && !errors.Is(err, io.EOF) {
-					panic(err)
-				}
-				fmt.Println(values)
+				//minVal, maxVal, ok := page.Bounds()
+				//if ok {
+				//	fmt.Println("Checking page bounds for column", chunk.Column())
+				//	if chunk.Type().Compare(namespace, minVal) < 0 || chunk.Type().Compare(namespace, maxVal) > 0 {
+				//		continue
+				//	}
+				//}
+
+				//values := make([]parquet.Value, page.NumValues())
+				//_, err = page.Values().ReadValues(values)
+				//if err != nil && !errors.Is(err, io.EOF) {
+				//	panic(err)
+				//}
+				fmt.Println("Read new page for column", chunk.Column(), page.NumRows(), page.Size()/1024, "KB")
 			}
-
-			//columnName := columns[chunk.Column()][0]
-			//pages := chunk.Pages()
-			//
-			//index := chunk.ColumnIndex()
-			//fmt.Println(index)
-			//
-			//p, err := pages.ReadPage()
-			//if err != nil {
-			//	panic(err)
-			//}
-			//
-			//dict := p.Dictionary()
-			//if p.Type().String() == "STRING" {
-			//	values := make([]parquet.Value, 1)
-			//	indexes := []int32{0}
-			//	dict.Lookup(indexes, values)
-			//	fmt.Println(columnName, values)
-			//}
-			//
-			//switch page := p.Values().(type) {
-			//case parquet.ByteArrayReader:
-			//	values := make([]byte, 10000*p.NumValues())
-			//	_, err := page.ReadByteArrays(values)
-			//	if err != nil && !errors.Is(err, io.EOF) {
-			//		panic(err)
-			//	}
-			//case parquet.Int64Reader:
-			//	fmt.Println(p.Bounds())
-			//default:
-			//	fmt.Println(columnName)
-			//}
 		}
 	}
+	fmt.Println("Time taken:", time.Since(start))
 }

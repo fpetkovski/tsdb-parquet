@@ -1,4 +1,4 @@
-package dataset
+package db
 
 import (
 	"github.com/prometheus/prometheus/model/labels"

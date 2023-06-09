@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/http"
 	"os"
-	"runtime/pprof"
 
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/schollz/progressbar/v3"
 
-	"fpetkovski/prometheus-parquet/db"
-	"fpetkovski/prometheus-parquet/schema"
+	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/schema"
+
+	_ "net/http/pprof"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -19,18 +22,11 @@ import (
 )
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:8080", nil))
+	}()
+
 	parquet.RegisterEncoding(schema.XOREncoding, schema.XorEncoding{})
-
-	pprofFile, err := os.Create("./cpu.prof")
-	if err != nil {
-		log.Fatal("could not create CPU profile: ", err)
-	}
-	defer pprofFile.Close()
-
-	if err := pprof.StartCPUProfile(pprofFile); err != nil {
-		log.Fatal("could not start CPU profile: ", err)
-	}
-	defer pprof.StopCPUProfile()
 
 	tsdbBlock, block, err := openBlock("data", os.Args[1])
 	if err != nil {
@@ -95,9 +91,9 @@ func main() {
 		seriesID   int64 = -1
 	)
 
+	bar := progressbar.Default(numPostings)
 	rows := make([]parquet.Row, 0, 1000)
 	for ps.Next() {
-		fmt.Println("Series", seriesID)
 		rows = rows[:0]
 		seriesID++
 		lblBuilder.Reset()
@@ -119,6 +115,9 @@ func main() {
 				ChunkBytes: chk.Bytes(),
 			}
 			if err := writer.Write(chunk); err != nil {
+				log.Fatal(err)
+			}
+			if err := bar.Add(1); err != nil {
 				log.Fatal(err)
 			}
 		}

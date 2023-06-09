@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	froststorage "github.com/polarsignals/frostdb/storage"
 	"log"
 	"math"
 	"os"
 	"sort"
 	"strings"
+
+	froststorage "github.com/polarsignals/frostdb/storage"
 
 	"github.com/apache/arrow/go/v10/arrow"
 	"github.com/apache/arrow/go/v10/arrow/array"
@@ -21,7 +22,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/exp/maps"
 
-	"fpetkovski/prometheus-parquet/schema"
+	"fpetkovski/tsdb-parquet/schema"
 )
 
 func main() {

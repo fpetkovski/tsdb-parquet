@@ -4,7 +4,7 @@ import (
 	"reflect"
 
 	"github.com/segmentio/parquet-go"
-	"github.com/segmentio/parquet-go/compress/snappy"
+	"github.com/segmentio/parquet-go/compress/zstd"
 	"github.com/segmentio/parquet-go/deprecated"
 	"github.com/segmentio/parquet-go/format"
 )
@@ -21,7 +21,7 @@ func newColumn(name string, node parquet.Node) *column {
 func newInt64Column(name string) *column {
 	node := parquet.Leaf(parquet.Int64Type)
 	node = parquet.Encoded(node, &parquet.DeltaBinaryPacked)
-	node = parquet.Compressed(node, &snappy.Codec{})
+	node = parquet.Compressed(node, &zstd.Codec{})
 	return newColumn(name, node)
 }
 
@@ -35,21 +35,20 @@ func newStringColumn(name string) *column {
 func newFloat64Column(name string) *column {
 	node := parquet.Leaf(parquet.DoubleType)
 	node = parquet.Encoded(node, &XorEncoding{})
-	node = parquet.Compressed(node, &snappy.Codec{})
+	node = parquet.Compressed(node, &zstd.Codec{})
 	return newColumn(name, node)
 }
 
 func newByteArrayColumn(name string) *column {
 	node := parquet.Leaf(parquet.ByteArrayType)
 	node = parquet.Encoded(node, &parquet.DeltaLengthByteArray)
-	node = parquet.Compressed(node, &snappy.Codec{})
+	node = parquet.Compressed(node, &zstd.Codec{})
 	return newColumn(name, node)
 }
 
 func (l column) Name() string { return l.name }
 
 func (l column) Value(base reflect.Value) reflect.Value { return base }
-
 
 type groupType struct {
 	parquet.Type

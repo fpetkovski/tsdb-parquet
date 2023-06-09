@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestXOREncoding(t *testing.T)  {
+func TestXOREncoding(t *testing.T) {
 	enc := &XorEncoding{}
 
 	numVals := 5000

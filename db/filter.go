@@ -1,4 +1,4 @@
-package dataset
+package db
 
 import (
 	"math"
@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/prometheus-parquet/schema"
+	"fpetkovski/tsdb-parquet/schema"
 )
 
 type matcher struct {

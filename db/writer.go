@@ -1,16 +1,21 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"sort"
-	"strconv"
 
+	"github.com/apache/arrow/go/v10/parquet/file"
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/prometheus-parquet/schema"
+	"fpetkovski/tsdb-parquet/schema"
 )
 
-const bufferMaxRows = 100000
+const (
+	bufferMaxRows      = 100000
+	dataFileSuffix     = ".parquet"
+	metadataFileSuffix = ".metadata"
+)
 
 type Writer struct {
 	dir    string
@@ -66,26 +71,23 @@ func (w *Writer) Close() error {
 }
 
 func (w *Writer) flushBuffer() error {
-	defer w.buffer.Reset()
-
 	w.partID++
-	f, err := os.Create(w.dir + "/part." + strconv.Itoa(w.partID))
-	if err != nil {
+	partName := fmt.Sprintf("%s/part.%d", w.dir, w.partID)
+
+	if err := w.writeData(partName); err != nil {
 		return err
 	}
-	writerConfig := parquet.DefaultWriterConfig()
-	pqWriter := parquet.NewGenericWriter[any](f,
-		writerConfig,
+	return w.writeMetadata(partName)
+}
+
+func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
+	return parquet.NewGenericWriter[any](f,
+		parquet.DefaultWriterConfig(),
 		w.schema.ParquetSchema(),
 		parquet.WriteBufferSize(bufferMaxRows),
 		parquet.DataPageStatistics(true),
 		parquet.BloomFilters(w.bloomFilters...),
 	)
-	defer pqWriter.Close()
-
-	sort.Sort(w.buffer)
-	_, err = parquet.CopyRows(pqWriter, w.buffer.Rows())
-	return err
 }
 
 func (w *Writer) openBuffer() {
@@ -94,4 +96,37 @@ func (w *Writer) openBuffer() {
 		parquet.ColumnBufferCapacity(bufferMaxRows),
 		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
 	)
+}
+
+func (w *Writer) writeData(partName string) error {
+	defer w.buffer.Reset()
+	f, err := os.Create(partName + dataFileSuffix)
+	if err != nil {
+		return err
+	}
+
+	sort.Sort(w.buffer)
+	pqWriter := w.openWriter(f)
+	defer pqWriter.Close()
+
+	_, err = parquet.CopyRows(pqWriter, w.buffer.Rows())
+	return err
+}
+
+func (w *Writer) writeMetadata(partName string) error {
+	f, err := os.Open(partName + dataFileSuffix)
+	if err != nil {
+		return err
+	}
+	pqReader, err := file.NewParquetReader(f)
+	defer pqReader.Close()
+
+	metaFile, err := os.Create(partName + metadataFileSuffix)
+	if err != nil {
+		return err
+	}
+	defer metaFile.Close()
+
+	_, err = pqReader.MetaData().WriteTo(metaFile, nil)
+	return err
 }

@@ -1,4 +1,4 @@
-package dataset
+package db
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/gcs"
 
-	"fpetkovski/prometheus-parquet/schema"
+	"fpetkovski/tsdb-parquet/schema"
 )
 
 func TestQueryable(t *testing.T) {
