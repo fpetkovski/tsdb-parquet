@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	bufferMaxRows      = 100000
+	bufferMaxRows      = 200000
 	dataFileSuffix     = ".parquet"
 	metadataFileSuffix = ".metadata"
 )

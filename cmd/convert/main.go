@@ -122,19 +122,6 @@ func main() {
 			}
 		}
 	}
-
-	//pqReader, err := file.NewParquetReader(f)
-	//defer pqReader.Close()
-
-	//metaFile, err := os.Create("./out/meta.thrift")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer metaFile.Close()
-
-	//if _, err := pqReader.MetaData().WriteTo(metaFile, nil); err != nil {
-	//	log.Fatal(err)
-	//}
 }
 
 func openBlock(path string, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
