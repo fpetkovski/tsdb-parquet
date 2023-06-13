@@ -110,6 +110,7 @@ func (w *Writer) writeData(partName string) error {
 	defer pqWriter.Close()
 
 	_, err = parquet.CopyRows(pqWriter, w.buffer.Rows())
+
 	return err
 }
 
