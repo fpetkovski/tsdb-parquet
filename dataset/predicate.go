@@ -4,24 +4,28 @@ import (
 	"github.com/segmentio/parquet-go"
 )
 
-type RowSelector struct {
+type RowSelector interface {
+	SelectRows(parquet.RowGroup) RowSelection
+}
+
+type EqualsMatcher struct {
 	column parquet.LeafColumn
 	value  parquet.Value
 }
 
-func newRowSelector(column parquet.LeafColumn, value string) RowSelector {
-	return RowSelector{
+func newEqualsMatcher(column parquet.LeafColumn, value string) EqualsMatcher {
+	return EqualsMatcher{
 		column: column,
 		value:  parquet.ByteArrayValue([]byte(value)),
 	}
 }
 
-func (p RowSelector) selectRows(rowGroup parquet.RowGroup) predicateResult {
-	var selection predicateResult
+func (p EqualsMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	var selection RowSelection
 
 	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
 	if !p.matchesBloom(chunk.BloomFilter()) {
-		return predicateResult{skipRows(0, rowGroup.NumRows())}
+		return RowSelection{skip(0, rowGroup.NumRows())}
 	}
 
 	columnIndex := chunk.ColumnIndex()
@@ -34,13 +38,13 @@ func (p RowSelector) selectRows(rowGroup parquet.RowGroup) predicateResult {
 		}
 
 		if !p.matchesStatistics(columnIndex.MinValue(i), columnIndex.MaxValue(i)) {
-			selection = append(selection, skipRows(fromRow, toRow))
+			selection = append(selection, skip(fromRow, toRow))
 		}
 	}
 
 	return selection
 }
-func (p RowSelector) matchesBloom(bloom parquet.BloomFilter) bool {
+func (p EqualsMatcher) matchesBloom(bloom parquet.BloomFilter) bool {
 	if bloom == nil {
 		return true
 	}
@@ -48,7 +52,7 @@ func (p RowSelector) matchesBloom(bloom parquet.BloomFilter) bool {
 	return err == nil && match
 }
 
-func (p RowSelector) matchesStatistics(minValue, maxValue parquet.Value) bool {
+func (p EqualsMatcher) matchesStatistics(minValue, maxValue parquet.Value) bool {
 	compare := p.column.Node.Type().Compare
 
 	if compare(p.value, minValue) < 0 {
@@ -60,23 +64,75 @@ func (p RowSelector) matchesStatistics(minValue, maxValue parquet.Value) bool {
 	return true
 }
 
-func (p RowSelector) matchDictionary(dictionary parquet.Dictionary) bool {
+func (p EqualsMatcher) matchDictionary(dictionary parquet.Dictionary) bool {
 	if dictionary == nil {
 		return true
 	}
 	return true
 }
 
-func minInt64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
+type GTEMatcher struct {
+	column parquet.LeafColumn
+	value  parquet.Value
 }
 
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
+func NewGTEMatcher(column parquet.LeafColumn, value parquet.Value) *GTEMatcher {
+	return &GTEMatcher{
+		column: column,
+		value:  value,
 	}
-	return b
+}
+
+func (G GTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	chunk := rowGroup.ColumnChunks()[G.column.ColumnIndex]
+	columnIndex := chunk.ColumnIndex()
+	offsetIndex := chunk.OffsetIndex()
+	compare := chunk.Type().Compare
+
+	var selection RowSelection
+	for i := 0; i < columnIndex.NumPages(); i++ {
+		fromRow := offsetIndex.FirstRowIndex(i)
+		toRow := rowGroup.NumRows()
+		if i < columnIndex.NumPages()-1 {
+			toRow = offsetIndex.FirstRowIndex(i + 1)
+		}
+		if compare(G.value, columnIndex.MaxValue(i)) > 0 {
+			selection = append(selection, skip(fromRow, toRow))
+		}
+	}
+
+	return selection
+}
+
+type LTEMatcher struct {
+	column parquet.LeafColumn
+	value  parquet.Value
+}
+
+func NewLTEMatcher(column parquet.LeafColumn, value parquet.Value) *LTEMatcher {
+	return &LTEMatcher{
+		column: column,
+		value:  value,
+	}
+}
+
+func (G LTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	chunk := rowGroup.ColumnChunks()[G.column.ColumnIndex]
+	columnIndex := chunk.ColumnIndex()
+	offsetIndex := chunk.OffsetIndex()
+	compare := chunk.Type().Compare
+
+	var selection RowSelection
+	for i := 0; i < columnIndex.NumPages(); i++ {
+		fromRow := offsetIndex.FirstRowIndex(i)
+		toRow := rowGroup.NumRows()
+		if i < columnIndex.NumPages()-1 {
+			toRow = offsetIndex.FirstRowIndex(i + 1)
+		}
+		if compare(G.value, columnIndex.MinValue(i)) < 0 {
+			selection = append(selection, skip(fromRow, toRow))
+		}
+	}
+
+	return selection
 }
