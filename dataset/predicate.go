@@ -1,26 +1,27 @@
 package dataset
 
-import "github.com/segmentio/parquet-go"
+import (
+	"github.com/segmentio/parquet-go"
+)
 
-type predicate struct {
-	columnIndex int
-	column      parquet.Column
-	value       parquet.Value
+type RowSelector struct {
+	column parquet.LeafColumn
+	value  parquet.Value
 }
 
-func newPredicate(column parquet.Column, value string) predicate {
-	return predicate{
+func newRowSelector(column parquet.LeafColumn, value string) RowSelector {
+	return RowSelector{
 		column: column,
 		value:  parquet.ByteArrayValue([]byte(value)),
 	}
 }
 
-func (p predicate) matchRowGroup(rowGroup parquet.RowGroup) rowSelection {
-	var selection rowSelection
+func (p RowSelector) selectRows(rowGroup parquet.RowGroup) predicateResult {
+	var selection predicateResult
 
-	chunk := rowGroup.ColumnChunks()[p.columnIndex]
-	if !p.matchBloom(chunk.BloomFilter()) {
-		return rowSelection{skipRows(0, rowGroup.NumRows())}
+	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
+	if !p.matchesBloom(chunk.BloomFilter()) {
+		return predicateResult{skipRows(0, rowGroup.NumRows())}
 	}
 
 	columnIndex := chunk.ColumnIndex()
@@ -32,17 +33,14 @@ func (p predicate) matchRowGroup(rowGroup parquet.RowGroup) rowSelection {
 			toRow = offsetIndex.FirstRowIndex(i + 1)
 		}
 
-		if p.matchStatistics(columnIndex.MinValue(i), columnIndex.MaxValue(i)) {
-			selection = append(selection, pickRange{
-				from: fromRow,
-				to:   toRow,
-			})
+		if !p.matchesStatistics(columnIndex.MinValue(i), columnIndex.MaxValue(i)) {
+			selection = append(selection, skipRows(fromRow, toRow))
 		}
 	}
 
 	return selection
 }
-func (p predicate) matchBloom(bloom parquet.BloomFilter) bool {
+func (p RowSelector) matchesBloom(bloom parquet.BloomFilter) bool {
 	if bloom == nil {
 		return true
 	}
@@ -50,8 +48,9 @@ func (p predicate) matchBloom(bloom parquet.BloomFilter) bool {
 	return err == nil && match
 }
 
-func (p predicate) matchStatistics(minValue parquet.Value, maxValue parquet.Value) bool {
-	compare := p.column.Type().Compare
+func (p RowSelector) matchesStatistics(minValue, maxValue parquet.Value) bool {
+	compare := p.column.Node.Type().Compare
+
 	if compare(p.value, minValue) < 0 {
 		return false
 	}
@@ -61,11 +60,10 @@ func (p predicate) matchStatistics(minValue parquet.Value, maxValue parquet.Valu
 	return true
 }
 
-func (p predicate) matchDictionary(dictionary parquet.Dictionary) bool {
+func (p RowSelector) matchDictionary(dictionary parquet.Dictionary) bool {
 	if dictionary == nil {
 		return true
 	}
-
 	return true
 }
 

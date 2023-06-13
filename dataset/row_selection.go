@@ -1,99 +1,106 @@
 package dataset
 
-import "golang.org/x/exp/slices"
+import (
+	"fmt"
 
-type matchType int
-
-const (
-	matchTypeSkip matchType = iota
-	matchTypePick
+	"golang.org/x/exp/slices"
 )
 
-type rowRange interface {
-	matchType() matchType
-	fromRow() int64
-	toRow() int64
-	intersect(rowRange) []rowRange
-}
-
-func lessRowRange(a, b rowRange) bool {
-	if a.fromRow() == b.fromRow() {
-		return a.toRow() < b.toRow()
-	}
-
-	return a.fromRow() < b.fromRow()
-}
-
-type pickRange struct {
+type rowRange struct {
 	from int64
 	to   int64
 }
 
-func pickRows(from, to int64) pickRange {
-	return pickRange{from: from, to: to}
-}
-func (p pickRange) matchType() matchType { return matchTypePick }
-
-func (p pickRange) fromRow() int64 { return p.from }
-
-func (p pickRange) toRow() int64 { return p.to }
-
-func (p pickRange) intersect(other rowRange) []rowRange {
-	if other.matchType() == matchTypePick {
-		from := maxInt64(p.from, other.fromRow())
-		to := minInt64(p.to, other.toRow())
-		return []rowRange{pickRows(from, to)}
+func lessSelectionResult(a, b rowRange) bool {
+	if a.from == b.from {
+		return a.to < b.to
 	}
+	return a.from < b.from
+}
 
-	return []rowRange{pickRows(p.from, other.fromRow()), other}
+func (p rowRange) overlaps(other rowRange) bool {
+	isDisjoint := p.to <= other.from || p.from >= other.to
+	return !isDisjoint
 }
 
 type skipRange struct {
-	from int64
-	to   int64
-}
-
-func (s skipRange) fromRow() int64 { return s.from }
-
-func (s skipRange) toRow() int64 { return s.to }
-
-func (s skipRange) matchType() matchType { return matchTypeSkip }
-
-func (s skipRange) intersect(other rowRange) []rowRange {
-	if other.matchType() == matchTypeSkip {
-		from := minInt64(s.from, other.fromRow())
-		to := maxInt64(s.to, other.toRow())
-		return []rowRange{skipRows(from, to)}
-	}
-
-	return []rowRange{s, pickRows(s.to, other.toRow())}
+	rowRange
 }
 
 func skipRows(from, to int64) skipRange {
-	return skipRange{from: from, to: to}
+	return skipRange{rowRange{from: from, to: to}}
 }
 
-type rowSelection []rowRange
+func (s skipRange) union(other rowRange) rowRange {
+	return rowRange{
+		from: minInt64(s.from, other.from),
+		to:   maxInt64(s.to, other.to),
+	}
+}
 
-func intersectSelections(selections ...rowSelection) rowSelection {
-	if len(selections) == 0 {
-		return nil
+func (s skipRange) String() string {
+	return fmt.Sprintf("skip(%d, %d)", s.from, s.to)
+}
+
+type predicateResult []skipRange
+
+func (s skipRange) intersect(other skipRange) predicateResult {
+	if s.overlaps(other.rowRange) {
+		overlap := s.union(other.rowRange)
+		return predicateResult{skipRange{overlap}}
 	}
 
-	allRanges := make([]rowRange, 0, len(selections))
-	for _, selection := range selections {
+	return predicateResult{s, other}
+}
+
+type pickRange struct {
+	rowRange
+}
+
+func pickRows(from, to int64) pickRange {
+	return pickRange{rowRange{from: from, to: to}}
+}
+
+type selectionResult []pickRange
+
+func intersectSelections(numRows int64, skips ...predicateResult) selectionResult {
+	if len(skips) == 0 {
+		return selectionResult{pickRows(0, numRows)}
+	}
+
+	allRanges := make(predicateResult, 0, len(skips))
+	for _, selection := range skips {
 		allRanges = append(allRanges, selection...)
 	}
 	if len(allRanges) == 0 {
-		return nil
+		return selectionResult{pickRows(0, numRows)}
 	}
-	slices.SortFunc(allRanges, lessRowRange)
+	slices.SortFunc(allRanges, func(a, b skipRange) bool {
+		return lessSelectionResult(a.rowRange, b.rowRange)
+	})
 
-	return mergeOverlappingRanges(allRanges)
+	merged := mergeOverlappingRanges(allRanges)
+	return invertSkips(numRows, merged)
 }
 
-func mergeOverlappingRanges(allRanges []rowRange) rowSelection {
-	merged := []rowRange{allRanges[0]}
+func invertSkips(numRows int64, skips predicateResult) selectionResult {
+	result := make(selectionResult, 0, len(skips))
+	fromRow := int64(0)
+	for i := 0; i < len(skips); i++ {
+		skip := skips[i]
+		if skip.from > fromRow {
+			result = append(result, pickRows(fromRow, skip.from))
+		}
+		fromRow = skip.to
+	}
+	if fromRow < numRows {
+		result = append(result, pickRows(fromRow, numRows))
+	}
+	return result
+}
+
+func mergeOverlappingRanges(allRanges []skipRange) predicateResult {
+	merged := predicateResult{allRanges[0]}
 	allRanges = allRanges[1:]
 
 	for _, r := range allRanges {

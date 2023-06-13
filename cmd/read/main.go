@@ -28,7 +28,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	reader, err := db.OpenFileReader("part.5", bucket)
+	reader, err := db.OpenFileReader("part.4", bucket)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -41,9 +41,6 @@ func main() {
 	scanner := dataset.NewScanner(pqreader, reader,
 		dataset.Predicate(labels.MetricName, "container_fs_writes_total"),
 		dataset.Predicate("namespace", "monitoring"),
-
-
-
 		//dataset.Predicate(schema.ChunkBytesColumn, "0"),
 	)
 	if scanner.Scan() != nil {
