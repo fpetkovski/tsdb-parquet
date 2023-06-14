@@ -6,27 +6,21 @@ import (
 
 type ColumnSelector struct {
 	columnNames   []string
-	columnIndices []int
 }
 
-func NewColumnSelection(metadata *parquet.Schema, columns ...string) ColumnSelector {
-	columnIndices := make([]int, 0, len(columns))
-	columnNames := make([]string, 0, len(columns))
-	for i, column := range metadata.Columns() {
-		columnIndices = append(columnIndices, i)
-		columnNames = append(columnNames, column[0])
-	}
-
+func NewColumnSelection(columns ...string) ColumnSelector {
 	return ColumnSelector{
-		columnNames:   columnNames,
-		columnIndices: columnIndices,
+		columnNames:   columns,
 	}
 }
 
 func (cs ColumnSelector) SelectColumns(rowGroup parquet.RowGroup) []parquet.ColumnChunk {
-	columnChunks := make([]parquet.ColumnChunk, 0, len(cs.columnIndices))
-	for _, columnIndex := range cs.columnIndices {
-		columnChunks = append(columnChunks, rowGroup.ColumnChunks()[columnIndex])
+	columnChunks := make([]parquet.ColumnChunk, 0, len(cs.columnNames))
+	for _, columnName := range cs.columnNames {
+		column, ok := rowGroup.Schema().Lookup(columnName)
+		if ok {
+			columnChunks = append(columnChunks, rowGroup.ColumnChunks()[column.ColumnIndex])
+		}
 	}
 	return columnChunks
 }

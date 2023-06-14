@@ -1,10 +1,15 @@
 package dataset
 
 import (
+	"fmt"
+
 	"github.com/segmentio/parquet-go"
 )
 
 type RowSelector interface {
+	String() string
+	Column() parquet.LeafColumn
+	Matches(parquet.Value) bool
 	SelectRows(parquet.RowGroup) RowSelection
 }
 
@@ -18,6 +23,18 @@ func newEqualsMatcher(column parquet.LeafColumn, value string) EqualsMatcher {
 		column: column,
 		value:  parquet.ByteArrayValue([]byte(value)),
 	}
+}
+
+func (p EqualsMatcher) Column() parquet.LeafColumn {
+	return p.column
+}
+
+func (p EqualsMatcher) Matches(value parquet.Value) bool {
+	return p.column.Node.Type().Compare(p.value, value) == 0
+}
+
+func (p EqualsMatcher) String() string {
+	return fmt.Sprintf("%s = %s", p.column.Node.String(), p.value)
 }
 
 func (p EqualsMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
@@ -44,6 +61,7 @@ func (p EqualsMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 
 	return selection
 }
+
 func (p EqualsMatcher) matchesBloom(bloom parquet.BloomFilter) bool {
 	if bloom == nil {
 		return true
@@ -76,6 +94,10 @@ type GTEMatcher struct {
 	value  parquet.Value
 }
 
+func (p GTEMatcher) String() string {
+	return fmt.Sprintf("%s >= %s", p.column.Node.String(), p.value)
+}
+
 func NewGTEMatcher(column parquet.LeafColumn, value parquet.Value) *GTEMatcher {
 	return &GTEMatcher{
 		column: column,
@@ -83,8 +105,16 @@ func NewGTEMatcher(column parquet.LeafColumn, value parquet.Value) *GTEMatcher {
 	}
 }
 
-func (G GTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
-	chunk := rowGroup.ColumnChunks()[G.column.ColumnIndex]
+func (p GTEMatcher) Column() parquet.LeafColumn {
+	return p.column
+}
+
+func (p GTEMatcher) Matches(value parquet.Value) bool {
+	return p.column.Node.Type().Compare(value, p.value) >= 0
+}
+
+func (p GTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
 	columnIndex := chunk.ColumnIndex()
 	offsetIndex := chunk.OffsetIndex()
 	compare := chunk.Type().Compare
@@ -96,7 +126,7 @@ func (G GTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 		if i < columnIndex.NumPages()-1 {
 			toRow = offsetIndex.FirstRowIndex(i + 1)
 		}
-		if compare(G.value, columnIndex.MaxValue(i)) > 0 {
+		if compare(p.value, columnIndex.MaxValue(i)) > 0 {
 			selection = append(selection, skip(fromRow, toRow))
 		}
 	}
@@ -109,6 +139,18 @@ type LTEMatcher struct {
 	value  parquet.Value
 }
 
+func (p LTEMatcher) Column() parquet.LeafColumn {
+	return p.column
+}
+
+func (p LTEMatcher) Matches(value parquet.Value) bool {
+	return p.column.Node.Type().Compare(value, p.value) <= 0
+}
+
+func (p LTEMatcher) String() string {
+	return fmt.Sprintf("%s <= %s", p.column.Node.String(), p.value)
+}
+
 func NewLTEMatcher(column parquet.LeafColumn, value parquet.Value) *LTEMatcher {
 	return &LTEMatcher{
 		column: column,
@@ -116,8 +158,8 @@ func NewLTEMatcher(column parquet.LeafColumn, value parquet.Value) *LTEMatcher {
 	}
 }
 
-func (G LTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
-	chunk := rowGroup.ColumnChunks()[G.column.ColumnIndex]
+func (p LTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
 	columnIndex := chunk.ColumnIndex()
 	offsetIndex := chunk.OffsetIndex()
 	compare := chunk.Type().Compare
@@ -129,7 +171,7 @@ func (G LTEMatcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 		if i < columnIndex.NumPages()-1 {
 			toRow = offsetIndex.FirstRowIndex(i + 1)
 		}
-		if compare(G.value, columnIndex.MinValue(i)) < 0 {
+		if compare(p.value, columnIndex.MinValue(i)) < 0 {
 			selection = append(selection, skip(fromRow, toRow))
 		}
 	}

@@ -35,7 +35,7 @@ type FileReader struct {
 func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error) {
 	partMetadata, err := readMetadata(partName+metadataFileSuffix, bucket)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading file metadata")
 	}
 
 	dataFile := partName + dataFileSuffix
@@ -43,17 +43,17 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 
 	dataFileAtts, err := bucket.Attributes(context.Background(), dataFile)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
 	bloomFiltersSection, err := readBloomFilters(dataReader, partMetadata)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
 
-	dictionaryPages, err := readDictionaryPages(dataReader, partMetadata)
+	dictionaryPages, err := readDictionaryPages(dataReader, partMetadata, dataFileAtts.Size)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading column dictionaries")
 	}
 
 	reader := &FileReader{
@@ -119,14 +119,16 @@ func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMe
 	return metadata.NewFileMetaData(metadataBytes, nil)
 }
 
-func readDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (section, error) {
+func readDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) (section, error) {
 	numRowGroups := len(metadata.RowGroups)
 	var i, j int
+	//var hasDictionaries bool
 loopColumns:
 	for i = 0; i < numRowGroups; i++ {
 		for j = 0; j < len(metadata.RowGroups[i].Columns); j++ {
 			dictionaryPageOffset := metadata.RowGroups[i].Columns[j].MetaData.DictionaryPageOffset
 			if dictionaryPageOffset != nil {
+				//hasDictionaries = true
 				break loopColumns
 			}
 		}
@@ -138,10 +140,13 @@ loopColumns:
 	lastRowGroup := metadata.RowGroups[numRowGroups-1]
 	lastColumn := lastRowGroup.Columns[len(lastRowGroup.Columns)-1]
 	lastDictPageOffset := *lastColumn.MetaData.DictionaryPageOffset + 4*1024
+	if lastDictPageOffset > fileSize {
+		lastDictPageOffset = fileSize
+	}
 
 	bytes := make([]byte, lastDictPageOffset-firstDictPageOffset)
 	_, err := dataReader.ReadAt(bytes, firstDictPageOffset)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return section{}, err
 	}
 
@@ -164,6 +169,10 @@ func readBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (
 	slices.SortFunc(bloomFilterOffsets, func(a, b int64) bool {
 		return a < b
 	})
+
+	if len(bloomFilterOffsets) == 0 {
+		return section{}, nil
+	}
 
 	from := bloomFilterOffsets[0]
 	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024

@@ -27,7 +27,7 @@ type ScannerOption func(*Scanner)
 
 func Projection(columns ...string) ScannerOption {
 	return func(scanner *Scanner) {
-		scanner.projections = NewColumnSelection(scanner.file.Schema(), columns...)
+		scanner.projections = NewColumnSelection(columns...)
 	}
 }
 
@@ -66,13 +66,13 @@ func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOpt
 		file:        file,
 		reader:      reader,
 		predicates:  make([]RowSelector, 0),
-		projections: NewColumnSelection(file.Schema()),
+		projections: NewColumnSelection(),
 	}
 	for _, option := range options {
 		option(scanner)
 	}
 
-	//loadDictionaries(file, reader)
+	// loadDictionaries(file, reader)
 
 	return scanner
 }
@@ -84,74 +84,71 @@ func (s *Scanner) Scan() error {
 	}()
 
 	for _, rowGroup := range s.file.RowGroups() {
-		predicateSelections := make([]RowSelection, 0, len(s.predicates))
+		rowSelections := make([]RowSelection, 0, len(s.predicates))
 		for _, predicate := range s.predicates {
-			predicateSelections = append(predicateSelections, predicate.SelectRows(rowGroup))
+			selection := predicate.SelectRows(rowGroup)
+			rowSelections = append(rowSelections, selection)
 		}
-		selectedRows := pickRanges(rowGroup.NumRows(), predicateSelections...)
-		fmt.Println(selectedRows)
+		selectedRows := pickRanges(rowGroup.NumRows(), rowSelections...)
+
+		for _, predicate := range s.predicates {
+			chunk := rowGroup.ColumnChunks()[predicate.Column().ColumnIndex]
+			rowSelection, err := s.filterRows(chunk, selectedRows, predicate)
+			if err != nil {
+				return err
+			}
+
+			rowSelections = append(rowSelections, rowSelection)
+		}
+
+		selectedRows = pickRanges(rowGroup.NumRows(), rowSelections...)
+		fmt.Println(selectedRows, selectedRows.NumRows())
 	}
 	return nil
+}
 
-	//for _, f := range s.predicates {
-	//	colID := s.columnIndex[f.column.Name()]
-	//	columnChunk := rowGroup.ColumnChunks()[colID]
-	//	filterValue := f.value
-	//	bloom := rowGroup.ColumnChunks()[colID].BloomFilter()
-	//	if bloom != nil {
-	//		columnName := s.file.Metadata().RowGroups[rowID].Columns[colID].MetaData.PathInSchema
-	//		fmt.Println("Checking bloom filter for columnChunk", columnName)
-	//		hasValue, err := bloom.Check(filterValue)
-	//		if err != nil {
-	//			return err
-	//		}
-	//		if !hasValue {
-	//			continue
-	//		}
-	//	}
-	//
-	//	fmt.Println("Page statistics")
-	//	columnIndex := columnChunk.ColumnIndex()
-	//	for i := 0; i < columnIndex.NumPages(); i++ {
-	//		fmt.Println(columnIndex.MinValue(i).String())
-	//		fmt.Println(columnIndex.MaxValue(i).String())
-	//	}
-	//
-	//	fmt.Println("Row IDs")
-	//	offsetIndex := columnChunk.OffsetIndex()
-	//	for i := 0; i < offsetIndex.NumPages(); i++ {
-	//		fmt.Println(offsetIndex.FirstRowIndex(i))
-	//	}
-	//
-	//	lastPageIndex := columnIndex.NumPages() - 1
-	//	from := offsetIndex.Offset(0)
-	//	to := offsetIndex.Offset(lastPageIndex) + offsetIndex.CompressedPageSize(lastPageIndex)
-	//	fmt.Println("Loading section", from, to)
-	//	if err := s.reader.LoadSection(from, to); err != nil {
-	//		return err
-	//	}
-	//
-	//	chunk := rowGroup.ColumnChunks()[colID]
-	//	pages := chunk.Pages()
-	//	if err := pages.SeekToRow(0); err != nil {
-	//		return err
-	//	}
-	//	for {
-	//		page, err := pages.ReadPage()
-	//		if err == io.EOF {
-	//			break
-	//		}
-	//
-	//		values := make([]parquet.Value, page.NumValues())
-	//		_, err = page.Values().ReadValues(values)
-	//		if err != nil && !errors.Is(err, io.EOF) {
-	//			panic(err)
-	//		}
-	//		fmt.Println("Read new page for columnChunk", chunk.Column(), page.NumRows(), page.Size()/1024, "KB")
-	//	}
-	//	pages.Close()
-	//}
+func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, predicate RowSelector) (RowSelection, error) {
+	pages := chunk.Pages()
+	defer pages.Close()
 
+	var numMatches int64
+	var selections RowSelection
+	for _, rows := range ranges {
+		cursor := rows.from
+		for cursor < rows.to {
+			skipFrom, skipTo := cursor, cursor
+
+			if err := pages.SeekToRow(cursor); err != nil {
+				return nil, err
+			}
+			page, err := pages.ReadPage()
+			if err != nil {
+				return nil, err
+			}
+			numValues := rows.to - cursor
+			if numValues > page.NumValues() {
+				numValues = page.NumValues()
+			}
+			values := make([]parquet.Value, numValues)
+			n, err := page.Values().ReadValues(values)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			for i := 0; i < n; i++ {
+				skipTo++
+				matches := predicate.Matches(values[i])
+				if matches {
+					numMatches++
+					selections = append(selections, skip(skipFrom, skipTo-1))
+					skipFrom = skipTo
+				}
+			}
+			selections = append(selections, skip(skipFrom, skipTo))
+			cursor += numValues
+		}
+	}
+	fmt.Println(numMatches)
+	return selections, nil
 }
 
 func loadDictionaries(file *parquet.File, reader *db.FileReader) {
