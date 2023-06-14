@@ -122,6 +122,14 @@ func main() {
 			}
 		}
 	}
+
+	if err := writer.Flush(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := writer.Compact(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func openBlock(path string, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
