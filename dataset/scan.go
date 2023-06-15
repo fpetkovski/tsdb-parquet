@@ -1,19 +1,20 @@
 package dataset
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/segmentio/encoding/thrift"
 	"github.com/segmentio/parquet-go"
-	"github.com/segmentio/parquet-go/format"
+	"golang.org/x/exp/slices"
 
 	"fpetkovski/tsdb-parquet/db"
 )
 
 const readPageSize = 4 * 1024
+
+var compact = thrift.CompactProtocol{}
 
 type Scanner struct {
 	reader *db.FileReader
@@ -72,17 +73,22 @@ func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOpt
 		option(scanner)
 	}
 
-	// loadDictionaries(file, reader)
+	slices.SortFunc(scanner.predicates, func(a, b RowSelector) bool {
+		aName, bName := a.Column().Path[0], b.Column().Path[0]
+		return db.CompareColumns(aName, bName)
+	})
 
 	return scanner
 }
 
-func (s *Scanner) Scan() error {
+func (s *Scanner) Scan() ([]SelectionResult, error) {
+	fmt.Println("Scanning...")
 	start := time.Now()
 	defer func() {
 		fmt.Println("Time taken:", time.Since(start))
 	}()
 
+	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := make([]RowSelection, 0, len(s.predicates))
 		for _, predicate := range s.predicates {
@@ -95,29 +101,31 @@ func (s *Scanner) Scan() error {
 			chunk := rowGroup.ColumnChunks()[predicate.Column().ColumnIndex]
 			rowSelection, err := s.filterRows(chunk, selectedRows, predicate)
 			if err != nil {
-				return err
+				return nil, err
 			}
-
 			rowSelections = append(rowSelections, rowSelection)
 		}
 
-		selectedRows = pickRanges(rowGroup.NumRows(), rowSelections...)
-		fmt.Println(selectedRows, selectedRows.NumRows())
+		filteredRows := pickRanges(rowGroup.NumRows(), rowSelections...)
+		result = append(result, filteredRows)
 	}
-	return nil
+	return result, nil
 }
 
 func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, predicate RowSelector) (RowSelection, error) {
 	pages := chunk.Pages()
 	defer pages.Close()
 
+	pageRange := selectPageOffsets(chunk, ranges)
+	if err := s.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
+		return nil, err
+	}
+
 	var numMatches int64
-	var selections RowSelection
+	var selection RowSelection
 	for _, rows := range ranges {
 		cursor := rows.from
 		for cursor < rows.to {
-			skipFrom, skipTo := cursor, cursor
-
 			if err := pages.SeekToRow(cursor); err != nil {
 				return nil, err
 			}
@@ -125,70 +133,125 @@ func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, 
 			if err != nil {
 				return nil, err
 			}
+
 			numValues := rows.to - cursor
 			if numValues > page.NumValues() {
 				numValues = page.NumValues()
 			}
+
 			values := make([]parquet.Value, numValues)
 			n, err := page.Values().ReadValues(values)
 			if err != nil && err != io.EOF {
 				return nil, err
 			}
+			skipFrom, skipTo := cursor, cursor
 			for i := 0; i < n; i++ {
 				skipTo++
 				matches := predicate.Matches(values[i])
 				if matches {
 					numMatches++
-					selections = append(selections, skip(skipFrom, skipTo-1))
+					selection.Skip(skipFrom, skipTo-1)
 					skipFrom = skipTo
 				}
 			}
-			selections = append(selections, skip(skipFrom, skipTo))
+			selection.Skip(skipFrom, skipTo)
 			cursor += numValues
 		}
 	}
-	fmt.Println(numMatches)
-	return selections, nil
+	return selection, nil
 }
 
-func loadDictionaries(file *parquet.File, reader *db.FileReader) {
-	compact := thrift.CompactProtocol{}
-	decoder := thrift.NewDecoder(compact.NewReader(nil))
-	for rowID, rowGroup := range file.Metadata().RowGroups {
-		for colID, chunk := range rowGroup.Columns {
-			if chunk.MetaData.DictionaryPageOffset == 0 {
-				continue
-			}
+func selectPageOffsets(chunk parquet.ColumnChunk, ranges SelectionResult) rowRange {
+	offsetIndex := chunk.OffsetIndex()
+	if len(ranges) == 0 {
+		return emptyRange()
+	}
 
-			sectionReader := io.NewSectionReader(reader, chunk.MetaData.DictionaryPageOffset, chunk.MetaData.TotalCompressedSize)
-			buffer := bufio.NewReader(sectionReader)
-			decoder.Reset(compact.NewReader(buffer))
-			header := &format.PageHeader{}
-			if err := decoder.Decode(header); err != nil {
-				panic(err)
-			}
-			if header.DictionaryPageHeader.NumValues == 0 {
-				continue
-			}
-			capacity := header.CompressedPageSize + (readPageSize - header.CompressedPageSize%readPageSize)
-			pageData := make([]byte, header.CompressedPageSize, capacity)
-			if _, err := io.ReadFull(buffer, pageData); err != nil && err != io.EOF {
-				panic(err)
-			}
+	pageOffsets := make([]int64, 0)
+	iRange := 0
+	iPages := 0
+	for iPages < offsetIndex.NumPages() && iRange < len(ranges) {
+		firstRowIndex := offsetIndex.FirstRowIndex(iPages)
+		var lastRowIndex int64
+		if iPages < offsetIndex.NumPages()-1 {
+			lastRowIndex = offsetIndex.FirstRowIndex(iPages + 1)
+		} else {
+			lastRowIndex = chunk.NumValues()
+		}
+		pageRange := rowRange{from: firstRowIndex, to: lastRowIndex}
+		if ranges[iRange].overlaps(pageRange) {
+			pageOffsets = append(pageOffsets, offsetIndex.Offset(iPages))
+		}
 
-			encoding := header.DictionaryPageHeader.Encoding
-			if encoding == format.PlainDictionary {
-				encoding = format.Plain
-			}
-
-			//fmt.Println("Decoding dictionary for row group", rowID, "column", file.Schema().Columns()[colID], "with encoding", encoding)
-			column := file.RowGroups()[rowID].ColumnChunks()[colID]
-			pageType := column.Type()
-
-			_, err := pageType.Decode(pageType.NewValues(nil, nil), pageData, parquet.LookupEncoding(encoding))
-			if err != nil {
-				fmt.Println("column", file.Schema().Columns()[colID], err.Error())
-			}
+		if ranges[iRange].before(pageRange) {
+			iRange++
+		} else {
+			iPages++
 		}
 	}
+
+	if len(pageOffsets) == 0 {
+		return emptyRange()
+	}
+	if iPages == offsetIndex.NumPages() {
+		n := len(pageOffsets) - 1
+		pageOffsets[n] = pageOffsets[n] + db.MaxPageSize
+	}
+	return rowRange{from: pageOffsets[0], to: pageOffsets[len(pageOffsets)-1]}
 }
+
+//type pageDictionaries map[int64]parquet.DictionaryPageHeader
+//
+//func (s *Scanner) decodeDictionaries() error {
+//	decoder := thrift.NewDecoder(compact.NewReader(nil))
+//	for rowID, rowGroup := range s.file.Metadata().RowGroups {
+//		for colID, column := range rowGroup.Columns {
+//			if column.MetaData.DictionaryPageOffset == 0 {
+//				continue
+//			}
+//			sectionReader := io.NewSectionReader(s.reader, column.MetaData.DictionaryPageOffset, column.MetaData.TotalCompressedSize)
+//			buffer := bufio.NewReader(sectionReader)
+//
+//			chunk := s.file.RowGroups()[rowID].ColumnChunks()[colID]
+//			dictionary, err := decodeChunkDictionaries(buffer, decoder, chunk)
+//			if err != nil {
+//				return err
+//			}
+//			if dictionary == nil {
+//				continue
+//			}
+//		}
+//	}
+//}
+//
+//func decodeChunkDictionaries(buffer *bufio.Reader, decoder *thrift.Decoder, chunk parquet.ColumnChunk) (pageDictionaries, error) {
+//	dictionaries := make(pageDictionaries)
+//
+//	decoder.Reset(compact.NewReader(buffer))
+//	header := &format.PageHeader{}
+//	if err := decoder.Decode(header); err != nil {
+//		panic(err)
+//	}
+//	if header.DictionaryPageHeader.NumValues == 0 {
+//		return nil, nil
+//	}
+//	capacity := header.CompressedPageSize + (readPageSize - header.CompressedPageSize%readPageSize)
+//	pageData := make([]byte, header.CompressedPageSize, capacity)
+//	if _, err := io.ReadFull(buffer, pageData); err != nil && err != io.EOF {
+//		panic(err)
+//	}
+//
+//	encoding := header.DictionaryPageHeader.Encoding
+//	if encoding == format.PlainDictionary {
+//		encoding = format.Plain
+//	}
+//
+//	pageType := chunk.Type()
+//	values, err := pageType.Decode(pageType.NewValues(nil, nil), pageData, parquet.LookupEncoding(encoding))
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//
+//	return pageType.NewDictionary(chunk.Column(), int(values.Size()), values), nil
+//}

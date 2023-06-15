@@ -20,46 +20,53 @@ type testRow struct {
 	ColumnD string `parquet:",dict"`
 }
 
-var testRowSchema = parquet.SchemaOf(&testRow{})
-
-func newTestRow(columnA string, columnB string, columnC string, columnD string) testRow {
+func makeTestRow(columnA string, columnB string, columnC string, columnD string) testRow {
 	return testRow{ColumnA: columnA, ColumnB: columnB, ColumnC: columnC, ColumnD: columnD}
 }
 
 func TestScan(t *testing.T) {
 	cases := []struct {
-		name string
-		rows []testRow
+		name     string
+		rows     []testRow
+		expected []SelectionResult
 	}{
 		{
 			name: "base_case",
 			rows: []testRow{
 				// Row group 1.
-				newTestRow("val1", "val1", "val1", "val1"),
-				newTestRow("val1", "val1", "val1", "val2"),
-				newTestRow("val1", "val1", "val1", "val3"),
+				makeTestRow("val1", "val1", "val1", "val1"),
+				makeTestRow("val1", "val1", "val1", "val2"),
+				makeTestRow("val1", "val1", "val1", "val3"),
 				// Row group 2.
-				newTestRow("val1", "val1", "val2", "val4"),
-				newTestRow("val1", "val1", "val2", "val1"),
-				newTestRow("val1", "val1", "val2", "val2"),
+				makeTestRow("val1", "val1", "val2", "val4"),
+				makeTestRow("val1", "val1", "val2", "val1"),
+				makeTestRow("val1", "val1", "val2", "val2"),
 				// Row group 3.
-				newTestRow("val1", "val1", "val3", "val4"),
-				newTestRow("val1", "val1", "val3", "val4"),
-				newTestRow("val1", "val1", "val3", "val5"),
+				makeTestRow("val1", "val1", "val3", "val4"),
+				makeTestRow("val1", "val1", "val3", "val4"),
+				makeTestRow("val1", "val1", "val3", "val5"),
+			},
+			expected: []SelectionResult{
+				{},
+				{pick(0, 1)},
+				{},
 			},
 		},
-
 		{
 			name: "base_case",
 			rows: []testRow{
 				// Row group 1.
-				newTestRow("val1", "val1", "val1", "val1"),
-				newTestRow("val1", "val1", "val1", "val2"),
-				newTestRow("val1", "val1", "val1", "val3"),
+				makeTestRow("val1", "val1", "val1", "val1"),
+				makeTestRow("val1", "val1", "val1", "val2"),
+				makeTestRow("val1", "val1", "val1", "val3"),
 				// Row group 2.
-				newTestRow("val1", "val1", "val2", "val4"),
-				newTestRow("val1", "val1", "val2", "val1"),
-				newTestRow("val1", "val1", "val2", "val2"),
+				makeTestRow("val1", "val1", "val2", "val4"),
+				makeTestRow("val1", "val1", "val2", "val2"),
+				makeTestRow("val1", "val1", "val2", "val4"),
+			},
+			expected: []SelectionResult{
+				{},
+				{pick(0, 1), pick(2, 3)},
 			},
 		},
 	}
@@ -83,7 +90,9 @@ func TestScan(t *testing.T) {
 				Equals("ColumnD", "val4"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			)
-			require.NoError(t, scanner.Scan())
+			rowRanges, err := scanner.Scan()
+			require.NoError(t, err)
+			require.Equal(t, tcase.expected, rowRanges)
 		})
 	}
 }

@@ -9,12 +9,16 @@ import (
 
 	"github.com/apache/arrow/go/v10/parquet/file"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
+	"golang.org/x/exp/slices"
 
 	"fpetkovski/tsdb-parquet/schema"
 )
 
 const (
+	MaxPageSize = 8 * 1024
+
 	bufferMaxRows      = 200000
 	dataFileSuffix     = ".parquet"
 	metadataFileSuffix = ".metadata"
@@ -37,6 +41,10 @@ func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema) *W
 	for _, lbl := range columns {
 		sortingColums = append(sortingColums, parquet.Ascending(lbl))
 	}
+	slices.SortFunc(sortingColums, func(a, b parquet.SortingColumn) bool {
+		aName, bName := a.Path()[0], b.Path()[0]
+		return CompareColumns(aName, bName)
+	})
 
 	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(columns))
 	for _, lbl := range columns {
@@ -160,6 +168,7 @@ func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
 		w.schema.ParquetSchema(),
 		parquet.SortingWriterConfig(parquet.SortingColumns(w.sortingColumns...)),
 		parquet.DefaultWriterConfig(),
+		parquet.PageBufferSize(MaxPageSize),
 		parquet.WriteBufferSize(bufferMaxRows),
 		parquet.DataPageStatistics(true),
 		parquet.BloomFilters(w.bloomFilters...),
@@ -204,4 +213,28 @@ func (w *Writer) createMetadataFile(partName string) error {
 
 	_, err = pqReader.MetaData().WriteTo(metaFile, nil)
 	return err
+}
+
+func CompareColumns(aName string, bName string) bool {
+	if aName == labels.MetricName {
+		return true
+	}
+	if bName == labels.MetricName {
+		return false
+	}
+
+	if aName == schema.MinTColumn {
+		return true
+	}
+	if bName == schema.MinTColumn {
+		return false
+	}
+
+	if aName == schema.MaxTColumn {
+		return true
+	}
+	if bName == schema.MaxTColumn {
+		return false
+	}
+	return aName < bName
 }

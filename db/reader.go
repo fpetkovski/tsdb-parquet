@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"sync"
 
 	"github.com/apache/arrow/go/v10/parquet/metadata"
 	"github.com/pkg/errors"
@@ -19,10 +21,6 @@ type section struct {
 	bytes []byte
 }
 
-type dictionaryPage struct {
-	header    parquet.DictionaryPageHeader
-	pageBytes []byte
-}
 type FileReader struct {
 	partName       string
 	file           *parquet.File
@@ -46,12 +44,14 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
-	bloomFiltersSection, err := readBloomFilters(dataReader, partMetadata)
+	fmt.Println("Loading bloom filter section")
+	bloomFiltersSection, err := loadBloomFilters(dataReader, partMetadata)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
 
-	dictionaryPages, err := readDictionaryPages(dataReader, partMetadata, dataFileAtts.Size)
+	fmt.Println("Loading dictionary sections")
+	dictionarySections, err := loadDictionaryPages(dataReader, partMetadata, dataFileAtts.Size)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading column dictionaries")
 	}
@@ -61,10 +61,7 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		metadata:       partMetadata,
 		dataFileSize:   dataFileAtts.Size,
 		dataFileReader: dataReader,
-		loadedSections: []section{
-			bloomFiltersSection,
-			dictionaryPages,
-		},
+		loadedSections: append([]section{bloomFiltersSection}, dictionarySections...),
 	}
 
 	return reader, nil
@@ -119,45 +116,45 @@ func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMe
 	return metadata.NewFileMetaData(metadataBytes, nil)
 }
 
-func readDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) (section, error) {
-	numRowGroups := len(metadata.RowGroups)
-	var i, j int
-	//var hasDictionaries bool
-loopColumns:
-	for i = 0; i < numRowGroups; i++ {
-		for j = 0; j < len(metadata.RowGroups[i].Columns); j++ {
-			dictionaryPageOffset := metadata.RowGroups[i].Columns[j].MetaData.DictionaryPageOffset
-			if dictionaryPageOffset != nil {
-				//hasDictionaries = true
-				break loopColumns
+func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) ([]section, error) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var sections []section
+	for _, rowGroup := range metadata.RowGroups {
+		for _, column := range rowGroup.Columns {
+			dataPageOffset := column.MetaData.DataPageOffset
+			dictionaryPageOffset := column.MetaData.DictionaryPageOffset
+			if dictionaryPageOffset == nil {
+				continue
 			}
+			if dataPageOffset - *dictionaryPageOffset < 4*1024 {
+				dataPageOffset = *dictionaryPageOffset + 4*1024
+			}
+			if dataPageOffset > fileSize {
+				dataPageOffset = fileSize
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				dictionarySection, err := readSection(dataReader, *dictionaryPageOffset, dataPageOffset)
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				sections = append(sections, dictionarySection)
+			}()
 		}
 	}
+	wg.Wait()
+	slices.SortFunc(sections, func(a, b section) bool {
+		return a.from < b.from
+	})
 
-	firstColumn := metadata.RowGroups[i].Columns[j]
-	firstDictPageOffset := *firstColumn.MetaData.DictionaryPageOffset
-
-	lastRowGroup := metadata.RowGroups[numRowGroups-1]
-	lastColumn := lastRowGroup.Columns[len(lastRowGroup.Columns)-1]
-	lastDictPageOffset := *lastColumn.MetaData.DictionaryPageOffset + 4*1024
-	if lastDictPageOffset > fileSize {
-		lastDictPageOffset = fileSize
-	}
-
-	bytes := make([]byte, lastDictPageOffset-firstDictPageOffset)
-	_, err := dataReader.ReadAt(bytes, firstDictPageOffset)
-	if err != nil && err != io.EOF {
-		return section{}, err
-	}
-
-	return section{
-		from:  firstDictPageOffset,
-		to:    lastDictPageOffset,
-		bytes: bytes,
-	}, nil
+	return sections, nil
 }
 
-func readBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (section, error) {
+func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (section, error) {
 	var bloomFilterOffsets []int64
 	for _, rg := range metadata.RowGroups {
 		for _, c := range rg.Columns {
