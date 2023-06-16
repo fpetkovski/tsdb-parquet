@@ -27,13 +27,13 @@ func NewRowFilter(reader *db.FileReader, matches matchFunc) RowFilter {
 }
 
 func (r rowFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
-	pages := chunk.Pages()
-	defer pages.Close()
-
 	pageRange := selectPageOffsets(chunk, ranges)
 	if err := r.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
 		return nil, err
 	}
+
+	pages := chunk.Pages()
+	defer pages.Close()
 
 	var numMatches int64
 	var selection RowSelection

@@ -15,6 +15,7 @@ import (
 
 	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/schema"
 	"fpetkovski/tsdb-parquet/storage"
 )
 
@@ -60,11 +61,11 @@ func main() {
 	}
 
 	scanner := dataset.NewScanner(pqreader, reader,
-		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1680052000000)),
-		//dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1680052000000)),
+		dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1680050000000)),
+		dataset.LessThanOrEqual(schema.MaxTColumn,    parquet.Int64Value(1680052000000)),
 		dataset.Equals(labels.MetricName, "container_cpu_usage_seconds_total"),
-		//dataset.Equals("namespace", "monitoring"),
-		//dataset.Equals("container", "statsd-loadbalancer"),
+		dataset.Equals("namespace", "monitoring"),
+		dataset.Equals("container", "prometheus"),
 		dataset.Project(
 			labels.MetricName,
 			"namespace",
