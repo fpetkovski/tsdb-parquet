@@ -13,7 +13,7 @@ type Scanner struct {
 	reader *db.FileReader
 	file   *parquet.File
 
-	predicates  []Predicate
+	predicates  Predicates
 	projections Projection
 }
 
@@ -59,7 +59,7 @@ func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOpt
 	scanner := &Scanner{
 		file:        file,
 		reader:      reader,
-		predicates:  make([]Predicate, 0),
+		predicates:  make(Predicates, 0),
 		projections: NewColumnSelection(),
 	}
 	for _, option := range options {
@@ -77,21 +77,14 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 
 	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
-		rowSelections := make([]RowSelection, 0, len(s.predicates))
-		for _, predicate := range s.predicates {
-			rowSelections = append(rowSelections, predicate.SelectRows(rowGroup))
-		}
-		selectedRows := pickRanges(rowGroup.NumRows(), rowSelections...)
+		rowSelections := s.predicates.SelectRows(rowGroup)
+		selectedRows := pickRanges(rowGroup.NumRows(), rowSelections)
 
-		for _, predicate := range s.predicates {
-			selection, err := predicate.FilterRows(rowGroup, selectedRows)
-			if err != nil {
-				return nil, err
-			}
-			rowSelections = append(rowSelections, selection)
+		rowFilters, err := s.predicates.FilterRows(rowGroup, selectedRows)
+		if err != nil {
+			return nil, err
 		}
-
-		filteredRows := pickRanges(rowGroup.NumRows(), rowSelections...)
+		filteredRows := pickRanges(rowGroup.NumRows(), append(rowSelections, rowFilters...))
 		result = append(result, filteredRows)
 	}
 	return result, nil

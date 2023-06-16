@@ -1,19 +1,37 @@
 package dataset
 
 import (
-	"fmt"
-
 	"github.com/segmentio/parquet-go"
 
 	"fpetkovski/tsdb-parquet/db"
 )
 
 type Predicate interface {
-	fmt.Stringer
-
 	SelectRows(rowGroup parquet.RowGroup) RowSelection
 	FilterRows(rowGroup parquet.RowGroup, selection SelectionResult) (RowSelection, error)
-	Column() parquet.LeafColumn
+}
+
+type Predicates []Predicate
+
+func (ps Predicates) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	var selection RowSelection
+	for _, p := range ps {
+		selection = append(selection, p.SelectRows(rowGroup)...)
+	}
+	return selection
+}
+
+func (ps Predicates) FilterRows(rowGroup parquet.RowGroup, ranges SelectionResult) (RowSelection, error) {
+	var result RowSelection
+	for _, p := range ps {
+		filteredRows, err := p.FilterRows(rowGroup, ranges)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, filteredRows...)
+	}
+
+	return result, nil
 }
 
 type Matcher struct {
@@ -22,6 +40,16 @@ type Matcher struct {
 
 	selectors RowSelectors
 	filter    RowFilter
+}
+
+func (p Matcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
+	return p.selectors.SelectRows(chunk)
+}
+
+func (p Matcher) FilterRows(rowGroup parquet.RowGroup, selection SelectionResult) (RowSelection, error) {
+	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
+	return p.filter.FilterRows(chunk, selection)
 }
 
 func newEqualsMatcher(reader *db.FileReader, column parquet.LeafColumn, value string) Matcher {
@@ -42,24 +70,6 @@ func newEqualsMatcher(reader *db.FileReader, column parquet.LeafColumn, value st
 			return compare(value, pqValue) == 0
 		}),
 	}
-}
-
-func (p Matcher) Column() parquet.LeafColumn {
-	return p.column
-}
-
-func (p Matcher) String() string {
-	return fmt.Sprintf("%s = %s", p.column.Node.String(), p.value)
-}
-
-func (p Matcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
-	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
-	return p.selectors.SelectRows(chunk)
-}
-
-func (p Matcher) FilterRows(rowGroup parquet.RowGroup, selection SelectionResult) (RowSelection, error) {
-	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
-	return p.filter.FilterRows(chunk, selection)
 }
 
 func newGTEMatcher(reader *db.FileReader, column parquet.LeafColumn, threshold parquet.Value) *Matcher {
