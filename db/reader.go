@@ -15,6 +15,8 @@ import (
 	"fpetkovski/tsdb-parquet/storage"
 )
 
+const ReadBufferSize = 4 * 1024
+
 type section struct {
 	from  int64
 	to    int64
@@ -127,7 +129,7 @@ func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData
 			if dictionaryPageOffset == nil {
 				continue
 			}
-			if dataPageOffset - *dictionaryPageOffset < 4*1024 {
+			if dataPageOffset-*dictionaryPageOffset < 4*1024 {
 				dataPageOffset = *dictionaryPageOffset + 4*1024
 			}
 			wg.Add(1)
@@ -173,10 +175,10 @@ func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData, f
 	return readSection(dataReader, from, to, fileSize)
 }
 
-func readSection(reader io.ReaderAt, from int64, to int64, size int64) (section, error) {
-	to += 4 * 1024
-	if to > size {
-		to = size
+func readSection(reader io.ReaderAt, from int64, to int64, fileSize int64) (section, error) {
+	to += ReadBufferSize
+	if to > fileSize {
+		to = fileSize
 	}
 	buffer := make([]byte, to-from)
 	_, err := reader.ReadAt(buffer, from)

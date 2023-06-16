@@ -2,18 +2,12 @@ package dataset
 
 import (
 	"fmt"
-	"io"
 	"time"
 
-	"github.com/segmentio/encoding/thrift"
 	"github.com/segmentio/parquet-go"
 
 	"fpetkovski/tsdb-parquet/db"
 )
-
-const readPageSize = 4 * 1024
-
-var compact = thrift.CompactProtocol{}
 
 type Scanner struct {
 	reader *db.FileReader
@@ -37,7 +31,7 @@ func Equals(column string, value string) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newEqualsMatcher(col, value))
+		scanner.predicates = append(scanner.predicates, newEqualsMatcher(scanner.reader, col, value))
 	}
 }
 
@@ -47,7 +41,7 @@ func GreaterThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newGTEMatcher(col, value))
+		scanner.predicates = append(scanner.predicates, newGTEMatcher(scanner.reader, col, value))
 	}
 }
 
@@ -57,7 +51,7 @@ func LessThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newLTEMatcher(col, value))
+		scanner.predicates = append(scanner.predicates, newLTEMatcher(scanner.reader, col, value))
 	}
 }
 
@@ -85,18 +79,16 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := make([]RowSelection, 0, len(s.predicates))
 		for _, predicate := range s.predicates {
-			selection := predicate.SelectRows(rowGroup)
-			rowSelections = append(rowSelections, selection)
+			rowSelections = append(rowSelections, predicate.SelectRows(rowGroup))
 		}
 		selectedRows := pickRanges(rowGroup.NumRows(), rowSelections...)
 
 		for _, predicate := range s.predicates {
-			chunk := rowGroup.ColumnChunks()[predicate.Column().ColumnIndex]
-			rowSelection, err := s.filterRows(chunk, selectedRows, predicate)
+			selection, err := predicate.FilterRows(rowGroup, selectedRows)
 			if err != nil {
 				return nil, err
 			}
-			rowSelections = append(rowSelections, rowSelection)
+			rowSelections = append(rowSelections, selection)
 		}
 
 		filteredRows := pickRanges(rowGroup.NumRows(), rowSelections...)
@@ -105,89 +97,7 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 	return result, nil
 }
 
-func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, predicate Predicate) (RowSelection, error) {
-	pages := chunk.Pages()
-	defer pages.Close()
-
-	pageRange := selectPageOffsets(chunk, ranges)
-	if err := s.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
-		return nil, err
-	}
-
-	var numMatches int64
-	var selection RowSelection
-	for _, rows := range ranges {
-		cursor := rows.from
-		for cursor < rows.to {
-			if err := pages.SeekToRow(cursor); err != nil {
-				return nil, err
-			}
-			page, err := pages.ReadPage()
-			if err != nil {
-				return nil, err
-			}
-
-			numValues := rows.to - cursor
-			if numValues > page.NumValues() {
-				numValues = page.NumValues()
-			}
-
-			values := make([]parquet.Value, numValues)
-			n, err := page.Values().ReadValues(values)
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-			skipFrom, skipTo := cursor, cursor
-			for i := 0; i < n; i++ {
-				skipTo++
-				matches := predicate.Matches(values[i])
-				if matches {
-					numMatches++
-					selection = selection.Skip(skipFrom, skipTo-1)
-					skipFrom = skipTo
-				}
-			}
-			selection = selection.Skip(skipFrom, skipTo)
-			cursor += numValues
-		}
-	}
-	return selection, nil
-}
-
-func selectPageOffsets(chunk parquet.ColumnChunk, ranges SelectionResult) rowRange {
-	offsetIndex := chunk.OffsetIndex()
-	if len(ranges) == 0 {
-		return emptyRange()
-	}
-
-	pageOffsets := make([]int64, 0)
-	iRange := 0
-	iPages := 0
-	for iPages < offsetIndex.NumPages() && iRange < len(ranges) {
-		firstRowIndex := offsetIndex.FirstRowIndex(iPages)
-		var lastRowIndex int64
-		if iPages < offsetIndex.NumPages()-1 {
-			lastRowIndex = offsetIndex.FirstRowIndex(iPages + 1)
-		} else {
-			lastRowIndex = chunk.NumValues()
-		}
-		pageRange := rowRange{from: firstRowIndex, to: lastRowIndex}
-		if ranges[iRange].overlaps(pageRange) {
-			pageOffsets = append(pageOffsets, offsetIndex.Offset(iPages))
-		}
-
-		if ranges[iRange].before(pageRange) {
-			iRange++
-		} else {
-			iPages++
-		}
-	}
-
-	if len(pageOffsets) == 0 {
-		return emptyRange()
-	}
-	return rowRange{from: pageOffsets[0], to: pageOffsets[len(pageOffsets)-1]}
-}
+//var compact = thrift.CompactProtocol{}
 
 //type pageDictionaries map[int64]parquet.DictionaryPageHeader
 //

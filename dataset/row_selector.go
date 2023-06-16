@@ -4,13 +4,13 @@ import (
 	"github.com/segmentio/parquet-go"
 )
 
-type PageSelector interface {
+type RowSelector interface {
 	SelectRows(mode parquet.ColumnChunk) RowSelection
 }
 
-type PageSelectors []PageSelector
+type RowSelectors []RowSelector
 
-func (p PageSelectors) SelectRows(chunk parquet.ColumnChunk) RowSelection {
+func (p RowSelectors) SelectRows(chunk parquet.ColumnChunk) RowSelection {
 	var selection RowSelection
 	for _, selector := range p {
 		selection = append(selection, selector.SelectRows(chunk)...)
@@ -18,15 +18,15 @@ func (p PageSelectors) SelectRows(chunk parquet.ColumnChunk) RowSelection {
 	return selection
 }
 
-type bloomRowSelector struct {
+type bloomSelector struct {
 	value parquet.Value
 }
 
-func newBloomRowSelector(value parquet.Value) *bloomRowSelector {
-	return &bloomRowSelector{value: value}
+func newBloomSelector(value parquet.Value) *bloomSelector {
+	return &bloomSelector{value: value}
 }
 
-func (s bloomRowSelector) SelectRows(chunk parquet.ColumnChunk) RowSelection {
+func (s bloomSelector) SelectRows(chunk parquet.ColumnChunk) RowSelection {
 	var selection RowSelection
 	bloomFilter := chunk.BloomFilter()
 	if bloomFilter == nil {
@@ -42,15 +42,15 @@ func (s bloomRowSelector) SelectRows(chunk parquet.ColumnChunk) RowSelection {
 
 type compareFunc func(min, max parquet.Value) bool
 
-type statsRowSelector struct {
+type statsSelector struct {
 	compare compareFunc
 }
 
-func newStatsRowSelector(compare compareFunc) *statsRowSelector {
-	return &statsRowSelector{compare: compare}
+func newStatsSelector(compare compareFunc) *statsSelector {
+	return &statsSelector{compare: compare}
 }
 
-func (s statsRowSelector) SelectRows(chunk parquet.ColumnChunk) RowSelection {
+func (s statsSelector) SelectRows(chunk parquet.ColumnChunk) RowSelection {
 	var selection RowSelection
 	offsetIndex := chunk.OffsetIndex()
 	columnIndex := chunk.ColumnIndex()
