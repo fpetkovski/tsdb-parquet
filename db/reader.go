@@ -45,7 +45,7 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 	}
 
 	fmt.Println("Loading bloom filter section")
-	bloomFiltersSection, err := loadBloomFilters(dataReader, partMetadata)
+	bloomFiltersSection, err := loadBloomFilters(dataReader, partMetadata, dataFileAtts.Size)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
@@ -84,7 +84,7 @@ func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (r *FileReader) LoadSection(from, to int64) error {
-	s, err := readSection(r.dataFileReader, from, to)
+	s, err := readSection(r.dataFileReader, from, to, r.FileSize())
 	if err != nil {
 		return err
 	}
@@ -130,13 +130,10 @@ func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData
 			if dataPageOffset - *dictionaryPageOffset < 4*1024 {
 				dataPageOffset = *dictionaryPageOffset + 4*1024
 			}
-			if dataPageOffset > fileSize {
-				dataPageOffset = fileSize
-			}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				dictionarySection, err := readSection(dataReader, *dictionaryPageOffset, dataPageOffset)
+				dictionarySection, err := readSection(dataReader, *dictionaryPageOffset, dataPageOffset, fileSize)
 				if err != nil {
 					return
 				}
@@ -154,7 +151,7 @@ func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData
 	return sections, nil
 }
 
-func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (section, error) {
+func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) (section, error) {
 	var bloomFilterOffsets []int64
 	for _, rg := range metadata.RowGroups {
 		for _, c := range rg.Columns {
@@ -173,10 +170,14 @@ func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData) (
 
 	from := bloomFilterOffsets[0]
 	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024
-	return readSection(dataReader, from, to)
+	return readSection(dataReader, from, to, fileSize)
 }
 
-func readSection(reader io.ReaderAt, from int64, to int64) (section, error) {
+func readSection(reader io.ReaderAt, from int64, to int64, size int64) (section, error) {
+	to += 4 * 1024
+	if to > size {
+		to = size
+	}
 	buffer := make([]byte, to-from)
 	_, err := reader.ReadAt(buffer, from)
 	if err != nil {

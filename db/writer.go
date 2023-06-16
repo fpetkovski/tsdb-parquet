@@ -24,6 +24,14 @@ const (
 	metadataFileSuffix = ".metadata"
 )
 
+type WriterOption func(*Writer)
+
+func MaxRowsPerGroup(value int64) WriterOption {
+	return func(w *Writer) {
+		w.maxRowsPerGroup = value
+	}
+}
+
 type Writer struct {
 	dir    string
 	partID int
@@ -32,9 +40,11 @@ type Writer struct {
 	sortingColumns []parquet.SortingColumn
 	schema         *schema.ChunkSchema
 	bloomFilters   []parquet.BloomFilterColumn
+
+	maxRowsPerGroup int64
 }
 
-func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema) *Writer {
+func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema, option ...WriterOption) *Writer {
 	sortingColums := make([]parquet.SortingColumn, 0, len(columns)+2)
 	sortingColums = append(sortingColums, parquet.Ascending(schema.MinTColumn))
 	sortingColums = append(sortingColums, parquet.Ascending(schema.MaxTColumn))
@@ -57,6 +67,9 @@ func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema) *W
 		sortingColumns: sortingColums,
 		bloomFilters:   bloomFilters,
 		schema:         chunkSchema,
+	}
+	for _, opt := range option {
+		opt(writer)
 	}
 	writer.openBuffer()
 
@@ -170,6 +183,7 @@ func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
 		parquet.DefaultWriterConfig(),
 		parquet.PageBufferSize(MaxPageSize),
 		parquet.WriteBufferSize(bufferMaxRows),
+		parquet.MaxRowsPerRowGroup(w.maxRowsPerGroup),
 		parquet.DataPageStatistics(true),
 		parquet.BloomFilters(w.bloomFilters...),
 	)

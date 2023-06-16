@@ -1,95 +1,128 @@
 package dataset
 
 import (
-	"os"
-	"path"
 	"testing"
 
-	"github.com/apache/arrow/go/v10/parquet/file"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/schema"
 )
+
+var columns = []string{"ColumnA", "ColumnB", "ColumnC", "ColumnD"}
 
 type testRow struct {
 	ColumnA string `parquet:",dict"`
 	ColumnB string `parquet:",dict"`
 	ColumnC string `parquet:",dict"`
-	ColumnD string `parquet:",dict"`
 }
 
-func makeTestRow(columnA string, columnB string, columnC string, columnD string) testRow {
-	return testRow{ColumnA: columnA, ColumnB: columnB, ColumnC: columnC, ColumnD: columnD}
+func makeTestChunk(columnA string, columnB string, columnC string) schema.Chunk {
+	return schema.Chunk{
+		Labels: labels.FromStrings(
+			"ColumnA", columnA,
+			"ColumnB", columnB,
+			"ColumnC", columnC,
+		),
+	}
 }
 
 func TestScan(t *testing.T) {
 	cases := []struct {
-		name     string
-		rows     []testRow
-		expected []SelectionResult
+		name       string
+		rows       []schema.Chunk
+		predicates []ScannerOption
+		expected   []SelectionResult
 	}{
 		{
-			name: "base_case",
-			rows: []testRow{
+			name: "single row selection",
+			rows: []schema.Chunk{
 				// Row group 1.
-				makeTestRow("val1", "val1", "val1", "val1"),
-				makeTestRow("val1", "val1", "val1", "val2"),
-				makeTestRow("val1", "val1", "val1", "val3"),
+				makeTestChunk("val1", "val1", "val1"),
+				makeTestChunk("val1", "val1", "val1"),
+				makeTestChunk("val1", "val1", "val1"),
 				// Row group 2.
-				makeTestRow("val1", "val1", "val2", "val4"),
-				makeTestRow("val1", "val1", "val2", "val1"),
-				makeTestRow("val1", "val1", "val2", "val2"),
+				makeTestChunk("val1", "val2", "val3"),
+				makeTestChunk("val1", "val2", "val4"),
+				makeTestChunk("val1", "val2", "val5"),
 				// Row group 3.
-				makeTestRow("val1", "val1", "val3", "val4"),
-				makeTestRow("val1", "val1", "val3", "val4"),
-				makeTestRow("val1", "val1", "val3", "val5"),
+				makeTestChunk("val2", "val3", "val3"),
+				makeTestChunk("val2", "val3", "val4"),
+				makeTestChunk("val2", "val3", "val5"),
+			},
+			predicates: []ScannerOption{
+				Equals("ColumnB", "val2"),
+				Equals("ColumnC", "val4"),
+				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			},
 			expected: []SelectionResult{
 				{},
-				{pick(0, 1)},
+				{pick(1, 2)},
 				{},
 			},
 		},
 		{
-			name: "base_case",
-			rows: []testRow{
+			name: "multi row selection",
+			rows: []schema.Chunk{
 				// Row group 1.
-				makeTestRow("val1", "val1", "val1", "val1"),
-				makeTestRow("val1", "val1", "val1", "val2"),
-				makeTestRow("val1", "val1", "val1", "val3"),
+				makeTestChunk("val1", "val1", "val1"),
+				makeTestChunk("val1", "val1", "val2"),
+				makeTestChunk("val1", "val1", "val3"),
 				// Row group 2.
-				makeTestRow("val1", "val1", "val2", "val4"),
-				makeTestRow("val1", "val1", "val2", "val2"),
-				makeTestRow("val1", "val1", "val2", "val4"),
+				makeTestChunk("val1", "val2", "val4"),
+				makeTestChunk("val1", "val2", "val4"),
+				makeTestChunk("val1", "val2", "val5"),
+			},
+			predicates: []ScannerOption{
+				Equals("ColumnB", "val2"),
+				Equals("ColumnC", "val4"),
+				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			},
 			expected: []SelectionResult{
 				{},
+				{pick(0, 2)},
+			},
+		},
+		{
+			name: "multi disjoint rows selection",
+			rows: []schema.Chunk{
+				// Row group 1.
+				makeTestChunk("val1", "val2", "val1"),
+				makeTestChunk("val2", "val1", "val1"),
+				makeTestChunk("val2", "val2", "val1"),
+				// Row group 2.
+				makeTestChunk("val3", "val1", "val3"),
+				makeTestChunk("val3", "val2", "val3"),
+				makeTestChunk("val3", "val3", "val3"),
+			},
+			predicates: []ScannerOption{
+				Equals("ColumnB", "val2"),
+			},
+			expected: []SelectionResult{
 				{pick(0, 1), pick(2, 3)},
+				{pick(1, 2)},
 			},
 		},
 	}
-	dir := t.TempDir()
+
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			filePath := path.Join(dir, tcase.name)
-			require.NoError(t, createRows(filePath, tcase.rows))
+			dir := t.TempDir()
+			require.NoError(t, createDB(dir, tcase.rows))
 
 			bucket, err := filesystem.NewBucket(dir)
 			require.NoError(t, err)
 
-			pqFile, err := db.OpenFileReader(tcase.name, bucket)
+			pqFile, err := db.OpenFileReader("part.0", bucket)
 			require.NoError(t, err)
 
 			pqreader, err := parquet.OpenFile(pqFile, pqFile.FileSize())
 			require.NoError(t, err)
 
-			scanner := NewScanner(pqreader, pqFile,
-				Equals("ColumnC", "val2"),
-				Equals("ColumnD", "val4"),
-				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
-			)
+			scanner := NewScanner(pqreader, pqFile, tcase.predicates...)
 			rowRanges, err := scanner.Scan()
 			require.NoError(t, err)
 			require.Equal(t, tcase.expected, rowRanges)
@@ -97,50 +130,15 @@ func TestScan(t *testing.T) {
 	}
 }
 
-func createRows(path string, rows []testRow) error {
-	if err := createDataFile(path, rows); err != nil {
-		return err
-	}
-	if err := createMetaDataFile(path); err != nil {
-		return err
-	}
-	return nil
-}
+func createDB(path string, chunks []schema.Chunk) error {
+	chunkSchema := schema.MakeChunkSchema(columns)
+	writer := db.NewWriter(path, columns, chunkSchema, db.MaxRowsPerGroup(3))
+	defer writer.Close()
 
-func createMetaDataFile(path string) error {
-	f, err := os.Open(path + ".parquet")
-	if err != nil {
-		return err
-	}
-	pqReader, err := file.NewParquetReader(f)
-	defer pqReader.Close()
-
-	metaFile, err := os.Create(path + ".metadata")
-	if err != nil {
-		return err
-	}
-
-	_, err = pqReader.MetaData().WriteTo(metaFile, nil)
-	if err != nil {
-		return err
-	}
-	return metaFile.Close()
-}
-
-func createDataFile(path string, rows []testRow) error {
-	f, err := os.Create(path + ".parquet")
-	if err != nil {
-		return err
-	}
-	writer := parquet.NewWriter(f,
-		parquet.MaxRowsPerRowGroup(3),
-		parquet.DataPageStatistics(true),
-	)
-
-	for _, row := range rows {
+	for _, row := range chunks {
 		if err := writer.Write(row); err != nil {
 			return err
 		}
 	}
-	return writer.Close()
+	return writer.Compact()
 }

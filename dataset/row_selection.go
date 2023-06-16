@@ -58,15 +58,19 @@ func (s skipRange) intersection(other skipRange) RowSelection {
 
 type RowSelection []skipRange
 
-func (r *RowSelection) Skip(from, to int64) {
-	if from == to {
-		return
-	}
-	*r = append(*r, skip(from, to))
+func SelectAll() RowSelection {
+	return RowSelection{}
 }
 
-func (r *RowSelection) NumRows(totalRows int64) int64 {
-	return pickRanges(totalRows, *r).NumRows()
+func (r RowSelection) Skip(from, to int64) RowSelection {
+	if from == to {
+		return r
+	}
+	return append(r, skip(from, to))
+}
+
+func (r RowSelection) NumRows(totalRows int64) int64 {
+	return pickRanges(totalRows, r).NumRows()
 }
 
 type pickRange struct {

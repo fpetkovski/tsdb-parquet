@@ -7,7 +7,6 @@ import (
 
 	"github.com/segmentio/encoding/thrift"
 	"github.com/segmentio/parquet-go"
-	"golang.org/x/exp/slices"
 
 	"fpetkovski/tsdb-parquet/db"
 )
@@ -20,13 +19,13 @@ type Scanner struct {
 	reader *db.FileReader
 	file   *parquet.File
 
-	predicates  []RowSelector
-	projections ColumnSelector
+	predicates  []Predicate
+	projections Projection
 }
 
 type ScannerOption func(*Scanner)
 
-func Projection(columns ...string) ScannerOption {
+func Project(columns ...string) ScannerOption {
 	return func(scanner *Scanner) {
 		scanner.projections = NewColumnSelection(columns...)
 	}
@@ -48,7 +47,7 @@ func GreaterThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, NewGTEMatcher(col, value))
+		scanner.predicates = append(scanner.predicates, newGTEMatcher(col, value))
 	}
 }
 
@@ -58,7 +57,7 @@ func LessThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, NewLTEMatcher(col, value))
+		scanner.predicates = append(scanner.predicates, newLTEMatcher(col, value))
 	}
 }
 
@@ -66,18 +65,12 @@ func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOpt
 	scanner := &Scanner{
 		file:        file,
 		reader:      reader,
-		predicates:  make([]RowSelector, 0),
+		predicates:  make([]Predicate, 0),
 		projections: NewColumnSelection(),
 	}
 	for _, option := range options {
 		option(scanner)
 	}
-
-	slices.SortFunc(scanner.predicates, func(a, b RowSelector) bool {
-		aName, bName := a.Column().Path[0], b.Column().Path[0]
-		return db.CompareColumns(aName, bName)
-	})
-
 	return scanner
 }
 
@@ -112,7 +105,7 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 	return result, nil
 }
 
-func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, predicate RowSelector) (RowSelection, error) {
+func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, predicate Predicate) (RowSelection, error) {
 	pages := chunk.Pages()
 	defer pages.Close()
 
@@ -150,11 +143,11 @@ func (s *Scanner) filterRows(chunk parquet.ColumnChunk, ranges SelectionResult, 
 				matches := predicate.Matches(values[i])
 				if matches {
 					numMatches++
-					selection.Skip(skipFrom, skipTo-1)
+					selection = selection.Skip(skipFrom, skipTo-1)
 					skipFrom = skipTo
 				}
 			}
-			selection.Skip(skipFrom, skipTo)
+			selection = selection.Skip(skipFrom, skipTo)
 			cursor += numValues
 		}
 	}
@@ -192,10 +185,6 @@ func selectPageOffsets(chunk parquet.ColumnChunk, ranges SelectionResult) rowRan
 
 	if len(pageOffsets) == 0 {
 		return emptyRange()
-	}
-	if iPages == offsetIndex.NumPages() {
-		n := len(pageOffsets) - 1
-		pageOffsets[n] = pageOffsets[n] + db.MaxPageSize
 	}
 	return rowRange{from: pageOffsets[0], to: pageOffsets[len(pageOffsets)-1]}
 }

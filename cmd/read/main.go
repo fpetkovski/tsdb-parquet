@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"runtime/pprof"
@@ -62,15 +63,19 @@ func main() {
 		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1680052000000)),
 		//dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1680052000000)),
 		dataset.Equals(labels.MetricName, "container_cpu_usage_seconds_total"),
-		dataset.Equals("namespace", "monitoring"),
-		dataset.Equals("container", "statsd-loadbalancer"),
-		dataset.Projection(
+		//dataset.Equals("namespace", "monitoring"),
+		//dataset.Equals("container", "statsd-loadbalancer"),
+		dataset.Project(
 			labels.MetricName,
 			"namespace",
 		),
 	)
-	if scanner.Scan() != nil {
+	selection, err := scanner.Scan()
+	if err != nil {
 		log.Fatalln(err)
 	}
 
+	for _, rowGroup := range selection {
+		fmt.Println(rowGroup.NumRows())
+	}
 }
