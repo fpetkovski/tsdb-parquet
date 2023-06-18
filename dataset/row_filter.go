@@ -38,7 +38,6 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 
 	var numMatches int64
 	var selection RowSelection
-
 	for {
 		page, rowIndex, err := pages.ReadPage()
 		if err == io.EOF {
@@ -118,23 +117,18 @@ func NewDictionaryFilter(reader *db.FileReader, matches matchFunc) RowFilter {
 }
 
 func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
-	pageRange, pageRows := selectPagesRange(chunk, ranges)
-	if err := r.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
-		return nil, err
-	}
-
-	pages := chunk.Pages()
+	pages := SelectPages(chunk, ranges)
 	defer pages.Close()
 
 	var dictionaryValue int32 = -1
 	var once sync.Once
 	var numMatches int64
 	var selection RowSelection
-	for _, cursor := range pageRows {
-		if err := pages.SeekToRow(cursor); err != nil {
-			return nil, err
+	for {
+		page, cursor, err := pages.ReadPage()
+		if err == io.EOF {
+			break
 		}
-		page, err := pages.ReadPage()
 		if err != nil {
 			return nil, err
 		}

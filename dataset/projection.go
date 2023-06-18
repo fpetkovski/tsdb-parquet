@@ -44,37 +44,26 @@ func (p *Projections) ReadColumnRanges(rowGroup parquet.RowGroup, selection Sele
 }
 
 func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionResult) ([]parquet.Value, error) {
-	pagesRange, _ := selectPagesRange(chunk, selection)
-	if err := p.reader.LoadSection(pagesRange.from, pagesRange.to); err != nil {
-		return nil, err
-	}
+	pages := SelectPages(chunk, selection)
+	defer pages.Close()
 
 	values := make([]parquet.Value, 0, selection.NumRows())
-	pages := chunk.Pages()
-	defer pages.Close()
-	for _, rows := range selection {
-		cursor := rows.from
-		if err := pages.SeekToRow(cursor); err != nil {
+	for {
+		page, _, err := pages.ReadPage()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			return nil, err
 		}
-		for cursor < rows.to {
-			page, err := pages.ReadPage()
-			if err != nil {
-				return nil, err
-			}
 
-			numValues := rows.to - cursor
-			if numValues > page.NumValues() {
-				numValues = page.NumValues()
-			}
-			pageValues := make([]parquet.Value, numValues)
-			n, err := page.Values().ReadValues(pageValues)
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-			values = append(values, pageValues[:n]...)
-			cursor += int64(n)
+		pageValues := make([]parquet.Value, page.NumValues())
+		n, err := page.Values().ReadValues(pageValues)
+		if err != nil && err != io.EOF {
+			return nil, err
 		}
+		values = append(values, pageValues[:n]...)
 	}
+
 	return values, nil
 }
