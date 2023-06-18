@@ -13,15 +13,15 @@ type Scanner struct {
 	reader *db.FileReader
 	file   *parquet.File
 
-	predicates  Predicates
-	projections Projection
+	predicates Predicates
+	projection Projections
 }
 
 type ScannerOption func(*Scanner)
 
 func Project(columns ...string) ScannerOption {
 	return func(scanner *Scanner) {
-		scanner.projections = NewColumnSelection(columns...)
+		scanner.projection = newProjection(scanner.file, scanner.reader, columns...)
 	}
 }
 
@@ -57,10 +57,9 @@ func LessThanOrEqual(column string, value parquet.Value) ScannerOption {
 
 func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOption) *Scanner {
 	scanner := &Scanner{
-		file:        file,
-		reader:      reader,
-		predicates:  make(Predicates, 0),
-		projections: NewColumnSelection(),
+		file:       file,
+		reader:     reader,
+		predicates: make(Predicates, 0),
 	}
 	for _, option := range options {
 		option(scanner)
@@ -86,7 +85,22 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 		}
 		filteredRows := pickRanges(rowGroup.NumRows(), append(rowSelections, rowFilters...))
 		result = append(result, filteredRows)
+
+		_, err = s.projection.ReadColumnRanges(rowGroup, filteredRows)
+		if err != nil {
+			return nil, err
+		}
+
+		//for i := int64(0); i < filteredRows.NumRows(); i++ {
+		//	for _, column := range columns {
+		//		fmt.Print(column[i])
+		//		fmt.Print(" ")
+		//	}
+		//	fmt.Println()
+		//}
+		//fmt.Println(len(columns[0]))
 	}
+
 	return result, nil
 }
 

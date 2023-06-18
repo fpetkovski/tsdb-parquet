@@ -38,6 +38,20 @@ func TestScan(t *testing.T) {
 		expected   []SelectionResult
 	}{
 		{
+			name: "single page, single predicate",
+			rows: []schema.Chunk{
+				makeTestChunk("val1", "val2", "val3"),
+				makeTestChunk("val1", "val2", "val4"),
+				makeTestChunk("val1", "val2", "val5"),
+			},
+			predicates: []ScannerOption{
+				Equals("ColumnC", "val4"),
+			},
+			expected: []SelectionResult{
+				{pick(1, 2)},
+			},
+		},
+		{
 			name: "single row selection",
 			rows: []schema.Chunk{
 				// Row group 1.
@@ -57,6 +71,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val2"),
 				Equals("ColumnC", "val4"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
+				Project("ColumnA", "ColumnC"),
 			},
 			expected: []SelectionResult{
 				{},

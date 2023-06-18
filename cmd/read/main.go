@@ -55,22 +55,20 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	pqreader, err := parquet.OpenFile(reader, reader.FileSize(), parquet.ReadBufferSize(db.ReadBufferSize))
+	pqFile, err := parquet.OpenFile(reader, reader.FileSize(), parquet.ReadBufferSize(db.ReadBufferSize))
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	scanner := dataset.NewScanner(pqreader, reader,
-		dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1680050000000)),
-		dataset.LessThanOrEqual(schema.MaxTColumn,    parquet.Int64Value(1680052000000)),
-		dataset.Equals(labels.MetricName, "container_cpu_usage_seconds_total"),
-		dataset.Equals("namespace", "monitoring"),
-		dataset.Equals("container", "prometheus"),
-		dataset.Project(
-			labels.MetricName,
-			"namespace",
-		),
+	scanner := dataset.NewScanner(pqFile, reader,
+		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1680050000000)),
+		//dataset.LessThanOrEqual(schema.MaxTColumn,    parquet.Int64Value(1680052000000)),
+		//dataset.Equals("container", "prometheus"),
+		dataset.Equals(labels.MetricName, "coredns_dns_request_duration_seconds_bucket"),
+		dataset.Equals("namespace", "kube-system"),
+		dataset.Project(schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone"),
 	)
+
 	selection, err := scanner.Scan()
 	if err != nil {
 		log.Fatalln(err)

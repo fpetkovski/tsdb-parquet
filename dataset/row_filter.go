@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"io"
+	"sync"
 
 	"github.com/segmentio/parquet-go"
 
@@ -14,20 +15,110 @@ type RowFilter interface {
 
 type matchFunc func(parquet.Value) bool
 
-type rowFilter struct {
+type decodingFilter struct {
 	reader  *db.FileReader
 	matches func(parquet.Value) bool
 }
 
-func NewRowFilter(reader *db.FileReader, matches matchFunc) RowFilter {
-	return &rowFilter{
+func NewDecodingFilter(reader *db.FileReader, matches matchFunc) RowFilter {
+	return &decodingFilter{
 		reader:  reader,
 		matches: matches,
 	}
 }
 
-func (r rowFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
-	pageRange := selectPageOffsets(chunk, ranges)
+func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
+	//pageRange, _ := selectPagesRange(chunk, ranges)
+	//if err := r.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
+	//	return nil, err
+	//}
+
+	pages := SelectPages(chunk, ranges)
+	defer pages.Close()
+
+	var numMatches int64
+	var selection RowSelection
+
+	for {
+		page, rowIndex, err := pages.ReadPage()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		values := make([]parquet.Value, page.NumValues())
+		n, err := page.Values().ReadValues(values)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		skipFrom, skipTo := rowIndex, rowIndex
+		for i := 0; i < n; i++ {
+			skipTo++
+			matches := r.matches(values[i])
+			if matches {
+				numMatches++
+				selection = selection.Skip(skipFrom, skipTo-1)
+				skipFrom = skipTo
+			}
+		}
+		selection = selection.Skip(skipFrom, skipTo)
+	}
+	return selection, nil
+
+	//for _, rows := range ranges {
+	//	cursor := rows.from
+	//	for cursor < rows.to {
+	//		if err := pages.SeekToRow(cursor); err != nil {
+	//			return nil, err
+	//		}
+	//		page, err := pages.ReadPage()
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//
+	//		numValues := rows.to - cursor
+	//		if numValues > page.NumValues() {
+	//			numValues = page.NumValues()
+	//		}
+	//
+	//		values := make([]parquet.Value, numValues)
+	//		n, err := page.Values().ReadValues(values)
+	//		if err != nil && err != io.EOF {
+	//			return nil, err
+	//		}
+	//		skipFrom, skipTo := cursor, cursor
+	//		for i := 0; i < n; i++ {
+	//			skipTo++
+	//			matches := r.matches(values[i])
+	//			if matches {
+	//				numMatches++
+	//				selection = selection.Skip(skipFrom, skipTo-1)
+	//				skipFrom = skipTo
+	//			}
+	//		}
+	//		selection = selection.Skip(skipFrom, skipTo)
+	//		cursor += numValues
+	//	}
+	//}
+	//return selection, nil
+}
+
+type dictionaryFilter struct {
+	reader  *db.FileReader
+	matches func(parquet.Value) bool
+}
+
+func NewDictionaryFilter(reader *db.FileReader, matches matchFunc) RowFilter {
+	return &dictionaryFilter{
+		reader:  reader,
+		matches: matches,
+	}
+}
+
+func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
+	pageRange, pageRows := selectPagesRange(chunk, ranges)
 	if err := r.reader.LoadSection(pageRange.from, pageRange.to); err != nil {
 		return nil, err
 	}
@@ -35,77 +126,51 @@ func (r rowFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult)
 	pages := chunk.Pages()
 	defer pages.Close()
 
+	var dictionaryValue int32 = -1
+	var once sync.Once
 	var numMatches int64
 	var selection RowSelection
-	for _, rows := range ranges {
-		cursor := rows.from
-		for cursor < rows.to {
-			if err := pages.SeekToRow(cursor); err != nil {
-				return nil, err
-			}
-			page, err := pages.ReadPage()
-			if err != nil {
-				return nil, err
-			}
-
-			numValues := rows.to - cursor
-			if numValues > page.NumValues() {
-				numValues = page.NumValues()
-			}
-
-			values := make([]parquet.Value, numValues)
-			n, err := page.Values().ReadValues(values)
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-			skipFrom, skipTo := cursor, cursor
-			for i := 0; i < n; i++ {
-				skipTo++
-				matches := r.matches(values[i])
-				if matches {
-					numMatches++
-					selection = selection.Skip(skipFrom, skipTo-1)
-					skipFrom = skipTo
-				}
-			}
-			selection = selection.Skip(skipFrom, skipTo)
-			cursor += numValues
+	for _, cursor := range pageRows {
+		if err := pages.SeekToRow(cursor); err != nil {
+			return nil, err
 		}
+		page, err := pages.ReadPage()
+		if err != nil {
+			return nil, err
+		}
+
+		data := page.Data()
+		once.Do(func() {
+			dictionaryValue = getDictionaryEncodedValue(page, r.matches)
+		})
+		if dictionaryValue == -1 {
+			selection = selection.Skip(cursor, page.NumRows())
+			continue
+		}
+
+		encodedValues := data.Int32()
+		skipFrom, skipTo := cursor, cursor
+		for _, val := range encodedValues {
+			skipTo++
+			if val == dictionaryValue {
+				numMatches++
+				selection = selection.Skip(skipFrom, skipTo-1)
+				skipFrom = skipTo
+			}
+		}
+		selection = selection.Skip(skipFrom, skipTo)
 	}
 	return selection, nil
 }
 
-func selectPageOffsets(chunk parquet.ColumnChunk, ranges SelectionResult) rowRange {
-	offsetIndex := chunk.OffsetIndex()
-	if len(ranges) == 0 {
-		return emptyRange()
-	}
-
-	pageOffsets := make([]int64, 0)
-	iRange := 0
-	iPages := 0
-	for iPages < offsetIndex.NumPages() && iRange < len(ranges) {
-		firstRowIndex := offsetIndex.FirstRowIndex(iPages)
-		var lastRowIndex int64
-		if iPages < offsetIndex.NumPages()-1 {
-			lastRowIndex = offsetIndex.FirstRowIndex(iPages + 1)
-		} else {
-			lastRowIndex = chunk.NumValues()
-		}
-		pageRange := rowRange{from: firstRowIndex, to: lastRowIndex}
-		if ranges[iRange].overlaps(pageRange) {
-			pageOffsets = append(pageOffsets, offsetIndex.Offset(iPages))
-		}
-
-		if ranges[iRange].before(pageRange) {
-			iRange++
-		} else {
-			iPages++
+func getDictionaryEncodedValue(page parquet.Page, matches matchFunc) int32 {
+	dictionaryData := page.Dictionary().Page().Data()
+	vals, offsets := dictionaryData.ByteArray()
+	for i := 0; i < len(offsets)-1; i++ {
+		val := parquet.ByteArrayValue(vals[offsets[i]:offsets[i+1]])
+		if matches(val) {
+			return int32(i)
 		}
 	}
-
-	if len(pageOffsets) == 0 {
-		return emptyRange()
-	}
-	return rowRange{from: pageOffsets[0], to: pageOffsets[len(pageOffsets)-1]}
+	return -1
 }

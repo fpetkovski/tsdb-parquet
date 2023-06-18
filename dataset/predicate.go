@@ -59,14 +59,13 @@ func newEqualsMatcher(reader *db.FileReader, column parquet.LeafColumn, value st
 	return Matcher{
 		column: column,
 		value:  pqValue,
-
 		selectors: []RowSelector{
 			newBloomSelector(pqValue),
 			newStatsSelector(func(min, max parquet.Value) bool {
 				return compare(min, pqValue) <= 0 && compare(max, pqValue) >= 0
 			}),
 		},
-		filter: NewRowFilter(reader, func(value parquet.Value) bool {
+		filter: NewDecodingFilter(reader, func(value parquet.Value) bool {
 			return compare(value, pqValue) == 0
 		}),
 	}
@@ -83,7 +82,7 @@ func newGTEMatcher(reader *db.FileReader, column parquet.LeafColumn, threshold p
 				return compare(max, threshold) >= 0
 			}),
 		},
-		filter: NewRowFilter(reader, func(rowValue parquet.Value) bool {
+		filter: NewDecodingFilter(reader, func(rowValue parquet.Value) bool {
 			return compare(rowValue, threshold) >= 0
 		}),
 	}
@@ -100,7 +99,7 @@ func newLTEMatcher(reader *db.FileReader, column parquet.LeafColumn, value parqu
 				return compare(min, value) <= 0
 			}),
 		},
-		filter: NewRowFilter(reader, func(rowValue parquet.Value) bool {
+		filter: NewDecodingFilter(reader, func(rowValue parquet.Value) bool {
 			return compare(rowValue, value) <= 0
 		}),
 	}
