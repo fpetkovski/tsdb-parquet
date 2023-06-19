@@ -13,24 +13,16 @@ func (r rowRange) length() int64 {
 	return r.to - r.from
 }
 
-func (r rowRange) less(other rowRange) bool {
-	if r.from == other.from {
-		return r.to < other.to
+func (r rowRange) before(other rowRange) bool {
+	if r.to == other.to	 {
+		return r.from < other.from
 	}
-	return r.from < other.from
+	return r.to < other.to
 }
 
 func (r rowRange) overlaps(other rowRange) bool {
 	disjoint := r.to <= other.from || other.to <= r.from
 	return !disjoint
-}
-
-func (r rowRange) before(other rowRange) bool {
-	return r.to <= other.to
-}
-
-func emptyRange() rowRange {
-	return rowRange{}
 }
 
 type skipRange struct {
@@ -41,19 +33,19 @@ func skip(from, to int64) skipRange {
 	return skipRange{rowRange{from: from, to: to}}
 }
 
-func (s skipRange) union(other skipRange) skipRange {
-	return skip(
-		minInt64(s.from, other.from),
-		maxInt64(s.to, other.to),
-	)
-}
-
-func (s skipRange) intersection(other skipRange) RowSelection {
+func (s skipRange) merge(other skipRange) RowSelection {
 	if s.overlaps(other.rowRange) {
 		return RowSelection{s.union(other)}
 	}
 
 	return RowSelection{s, other}
+}
+
+func (s skipRange) union(other skipRange) skipRange {
+	return skip(
+		minInt64(s.from, other.from),
+		maxInt64(s.to, other.to),
+	)
 }
 
 type RowSelection []skipRange
@@ -104,7 +96,7 @@ func pickRanges(numRows int64, skips ...RowSelection) SelectionResult {
 		return SelectionResult{pick(0, numRows)}
 	}
 	slices.SortFunc(allRanges, func(a, b skipRange) bool {
-		return a.less(b.rowRange)
+		return a.before(b.rowRange)
 	})
 
 	merged := mergeOverlappingRanges(allRanges)
@@ -118,7 +110,7 @@ func mergeOverlappingRanges(allRanges []skipRange) RowSelection {
 	for _, r := range allRanges {
 		last := merged[len(merged)-1]
 		merged = merged[:len(merged)-1]
-		merged = append(merged, last.intersection(r)...)
+		merged = append(merged, last.merge(r)...)
 	}
 	return merged
 }

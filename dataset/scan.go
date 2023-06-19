@@ -86,19 +86,18 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 		filteredRows := pickRanges(rowGroup.NumRows(), append(rowSelections, rowFilters...))
 		result = append(result, filteredRows)
 
-		_, err = s.projection.ReadColumnRanges(rowGroup, filteredRows)
+		columns, err := s.projection.ReadColumnRanges(rowGroup, filteredRows)
 		if err != nil {
 			return nil, err
 		}
 
-		//for i := int64(0); i < filteredRows.NumRows(); i++ {
-		//	for _, column := range columns {
-		//		fmt.Print(column[i])
-		//		fmt.Print(" ")
-		//	}
-		//	fmt.Println()
-		//}
-		//fmt.Println(len(columns[0]))
+		for i := int64(0); i < filteredRows.NumRows(); i++ {
+			for _, column := range columns {
+				fmt.Print(column[i])
+				fmt.Print(" ")
+			}
+			fmt.Println()
+		}
 	}
 
 	return result, nil

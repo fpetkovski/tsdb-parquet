@@ -63,11 +63,11 @@ func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
 	if len(p.index) == 0 {
 		return nil, 0, io.EOF
 	}
-	currentPageIndex := p.index[0].rowRange
+	pageRows := p.index[0].rowRange
 	p.index = p.index[1:]
 
-	if currentPageIndex.from > p.currentRowIndex {
-		err := p.pages.SeekToRow(currentPageIndex.from)
+	if pageRows.from > p.currentRowIndex {
+		err := p.pages.SeekToRow(pageRows.from)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -77,10 +77,10 @@ func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	page = page.Slice(0, currentPageIndex.to-currentPageIndex.from)
+	page = page.Slice(0, pageRows.length())
 	p.currentRowIndex += page.NumValues()
 
-	return page, currentPageIndex.from, nil
+	return page, pageRows.from, nil
 }
 
 func (p *selectedPages) OffsetRange() (int64, int64) {
