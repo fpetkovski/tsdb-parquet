@@ -26,7 +26,7 @@ func (r rowRange) overlaps(other rowRange) bool {
 }
 
 func (r rowRange) before(other rowRange) bool {
-	return r.to <= other.from
+	return r.to <= other.to
 }
 
 func emptyRange() rowRange {

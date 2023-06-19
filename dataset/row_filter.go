@@ -28,7 +28,7 @@ func NewDecodingFilter(reader *db.FileReader, matches matchFunc) RowFilter {
 }
 
 func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
-	pages := SelectPages(chunk.OffsetIndex(), chunk.NumValues(), chunk.Pages(), ranges)
+	pages := SelectPages(chunk, ranges)
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()
@@ -80,7 +80,7 @@ func NewDictionaryFilter(reader *db.FileReader, matches matchFunc) RowFilter {
 }
 
 func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionResult) (RowSelection, error) {
-	pages := SelectPages(chunk.OffsetIndex(), chunk.NumValues(), chunk.Pages(), ranges)
+	pages := SelectPages(chunk, ranges)
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()

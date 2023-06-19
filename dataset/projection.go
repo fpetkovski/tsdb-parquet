@@ -44,7 +44,7 @@ func (p *Projections) ReadColumnRanges(rowGroup parquet.RowGroup, selection Sele
 }
 
 func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionResult) ([]parquet.Value, error) {
-	pages := SelectPages(chunk.OffsetIndex(), chunk.NumValues(), chunk.Pages(), selection)
+	pages := SelectPages(chunk, selection)
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()

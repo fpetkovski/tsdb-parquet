@@ -19,16 +19,16 @@ import (
 const (
 	MaxPageSize = 8 * 1024
 
-	bufferMaxRows      = 200000
+	bufferMaxRows      = 256 * 1024
 	dataFileSuffix     = ".parquet"
 	metadataFileSuffix = ".metadata"
 )
 
 type WriterOption func(*Writer)
 
-func MaxRowsPerGroup(value int64) WriterOption {
+func PageBufferSize(value int) WriterOption {
 	return func(w *Writer) {
-		w.maxRowsPerGroup = value
+		w.pageBufferSize = value
 	}
 }
 
@@ -41,7 +41,7 @@ type Writer struct {
 	schema         *schema.ChunkSchema
 	bloomFilters   []parquet.BloomFilterColumn
 
-	maxRowsPerGroup int64
+	pageBufferSize int
 }
 
 func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema, option ...WriterOption) *Writer {
@@ -67,6 +67,8 @@ func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema, op
 		sortingColumns: sortingColums,
 		bloomFilters:   bloomFilters,
 		schema:         chunkSchema,
+
+		pageBufferSize: MaxPageSize,
 	}
 	for _, opt := range option {
 		opt(writer)
@@ -176,27 +178,6 @@ func (w *Writer) flushBuffer() error {
 	return w.createMetadataFile(partName)
 }
 
-func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
-	return parquet.NewGenericWriter[any](f,
-		w.schema.ParquetSchema(),
-		parquet.SortingWriterConfig(parquet.SortingColumns(w.sortingColumns...)),
-		parquet.DefaultWriterConfig(),
-		parquet.PageBufferSize(MaxPageSize),
-		parquet.WriteBufferSize(bufferMaxRows),
-		parquet.MaxRowsPerRowGroup(w.maxRowsPerGroup),
-		parquet.DataPageStatistics(true),
-		parquet.BloomFilters(w.bloomFilters...),
-	)
-}
-
-func (w *Writer) openBuffer() {
-	w.buffer = parquet.NewGenericBuffer[any](
-		w.schema.ParquetSchema(),
-		parquet.ColumnBufferCapacity(bufferMaxRows),
-		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
-	)
-}
-
 func (w *Writer) flushBufferToFile(partName string) error {
 	f, err := os.Create(partName + dataFileSuffix)
 	if err != nil {
@@ -209,6 +190,26 @@ func (w *Writer) flushBufferToFile(partName string) error {
 
 	_, err = parquet.CopyRows(pqWriter, w.buffer.Rows())
 	return err
+}
+
+func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
+	return parquet.NewGenericWriter[any](f,
+		w.schema.ParquetSchema(),
+		parquet.SortingWriterConfig(parquet.SortingColumns(w.sortingColumns...)),
+		parquet.DefaultWriterConfig(),
+		parquet.WriteBufferSize(bufferMaxRows),
+		parquet.PageBufferSize(w.pageBufferSize),
+		parquet.DataPageStatistics(true),
+		parquet.BloomFilters(w.bloomFilters...),
+	)
+}
+
+func (w *Writer) openBuffer() {
+	w.buffer = parquet.NewGenericBuffer[any](
+		w.schema.ParquetSchema(),
+		parquet.ColumnBufferCapacity(bufferMaxRows),
+		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
+	)
 }
 
 func (w *Writer) createMetadataFile(partName string) error {

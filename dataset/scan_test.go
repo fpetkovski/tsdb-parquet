@@ -33,92 +33,112 @@ func makeTestChunk(columnA string, columnB string, columnC string) schema.Chunk 
 func TestScan(t *testing.T) {
 	cases := []struct {
 		name       string
-		rows       []schema.Chunk
+		parts      [][]schema.Chunk
 		predicates []ScannerOption
-		expected   []SelectionResult
+		expected   SelectionResult
 	}{
 		{
 			name: "single page, single predicate",
-			rows: []schema.Chunk{
+			parts: [][]schema.Chunk{{
 				makeTestChunk("val1", "val2", "val3"),
 				makeTestChunk("val1", "val2", "val4"),
 				makeTestChunk("val1", "val2", "val5"),
-			},
+			}},
 			predicates: []ScannerOption{
 				Equals("ColumnC", "val4"),
 			},
-			expected: []SelectionResult{
-				{pick(1, 2)},
+			expected: SelectionResult{
+				pick(1, 2),
 			},
 		},
 		{
 			name: "single row selection",
-			rows: []schema.Chunk{
-				// Row group 1.
+			parts: [][]schema.Chunk{{
 				makeTestChunk("val1", "val1", "val1"),
 				makeTestChunk("val1", "val1", "val1"),
 				makeTestChunk("val1", "val1", "val1"),
-				// Row group 2.
+			}, {
 				makeTestChunk("val1", "val2", "val3"),
 				makeTestChunk("val1", "val2", "val4"),
 				makeTestChunk("val1", "val2", "val5"),
-				// Row group 3.
+			}, {
 				makeTestChunk("val2", "val3", "val3"),
 				makeTestChunk("val2", "val3", "val4"),
 				makeTestChunk("val2", "val3", "val5"),
-			},
+			}},
 			predicates: []ScannerOption{
+				Project("ColumnA", "ColumnC"),
 				Equals("ColumnB", "val2"),
 				Equals("ColumnC", "val4"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
-				Project("ColumnA", "ColumnC"),
 			},
-			expected: []SelectionResult{
-				{},
-				{pick(1, 2)},
-				{},
+			expected: SelectionResult{
+				pick(4, 5),
 			},
 		},
 		{
 			name: "multi row selection",
-			rows: []schema.Chunk{
-				// Row group 1.
+			parts: [][]schema.Chunk{{
 				makeTestChunk("val1", "val1", "val1"),
 				makeTestChunk("val1", "val1", "val2"),
 				makeTestChunk("val1", "val1", "val3"),
-				// Row group 2.
+			}, {
 				makeTestChunk("val1", "val2", "val4"),
 				makeTestChunk("val1", "val2", "val4"),
 				makeTestChunk("val1", "val2", "val5"),
-			},
+			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
 				Equals("ColumnC", "val4"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			},
-			expected: []SelectionResult{
-				{},
-				{pick(0, 2)},
+			expected: SelectionResult{
+				pick(3, 5),
 			},
 		},
 		{
 			name: "multi disjoint rows selection",
-			rows: []schema.Chunk{
-				// Row group 1.
+			parts: [][]schema.Chunk{{
 				makeTestChunk("val1", "val2", "val1"),
 				makeTestChunk("val2", "val1", "val1"),
 				makeTestChunk("val2", "val2", "val1"),
-				// Row group 2.
+			}, {
 				makeTestChunk("val3", "val1", "val3"),
 				makeTestChunk("val3", "val2", "val3"),
 				makeTestChunk("val3", "val3", "val3"),
-			},
+			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
 			},
-			expected: []SelectionResult{
-				{pick(0, 1), pick(2, 3)},
-				{pick(1, 2)},
+			expected: SelectionResult{
+				pick(0, 1), pick(2, 3), pick(4, 5),
+			},
+		},
+		{
+			name: "different page sizes",
+			parts: [][]schema.Chunk{{
+				makeTestChunk("val0", "val0", "val0"),
+			}, {
+				makeTestChunk("val1", "val1", "val1"),
+				makeTestChunk("val2", "val1", "val1"),
+				makeTestChunk("val3", "val1", "val2"),
+			}, {
+				makeTestChunk("val4", "val2", "val2"),
+				makeTestChunk("val5", "val2", "val1"),
+				makeTestChunk("val6", "val2", "val2"),
+				makeTestChunk("val7", "val2", "val2"),
+			}, {
+				makeTestChunk("val8", "val3", "val1"),
+				makeTestChunk("val9", "val3", "val2"),
+				makeTestChunk("val9", "val3", "val3"),
+			}, {
+				makeTestChunk("val9", "val4", "val1"),
+			}},
+			predicates: []ScannerOption{
+				Equals("ColumnC", "val2"),
+			},
+			expected: SelectionResult{
+				pick(3, 5), pick(6, 8), pick(9, 10),
 			},
 		},
 	}
@@ -126,12 +146,12 @@ func TestScan(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			dir := t.TempDir()
-			require.NoError(t, createDB(dir, tcase.rows))
+			require.NoError(t, createDB(dir, tcase.parts))
 
 			bucket, err := filesystem.NewBucket(dir)
 			require.NoError(t, err)
 
-			pqFile, err := db.OpenFileReader("part.0", bucket)
+			pqFile, err := db.OpenFileReader("compact", bucket)
 			require.NoError(t, err)
 
 			pqreader, err := parquet.OpenFile(pqFile, pqFile.FileSize())
@@ -140,18 +160,23 @@ func TestScan(t *testing.T) {
 			scanner := NewScanner(pqreader, pqFile, tcase.predicates...)
 			rowRanges, err := scanner.Scan()
 			require.NoError(t, err)
-			require.Equal(t, tcase.expected, rowRanges)
+			require.Equal(t, tcase.expected, rowRanges[0])
 		})
 	}
 }
 
-func createDB(path string, chunks []schema.Chunk) error {
+func createDB(path string, chunksParts [][]schema.Chunk) error {
 	chunkSchema := schema.MakeChunkSchema(columns)
-	writer := db.NewWriter(path, columns, chunkSchema, db.MaxRowsPerGroup(3))
+	writer := db.NewWriter(path, columns, chunkSchema, db.PageBufferSize(2))
 	defer writer.Close()
 
-	for _, row := range chunks {
-		if err := writer.Write(row); err != nil {
+	for _, part := range chunksParts {
+		for _, chunk := range part {
+			if err := writer.Write(chunk); err != nil {
+				return err
+			}
+		}
+		if err := writer.Flush(); err != nil {
 			return err
 		}
 	}
