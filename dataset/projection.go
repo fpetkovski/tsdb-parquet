@@ -11,10 +11,10 @@ import (
 type Projections struct {
 	scanner *Scanner
 	columns []parquet.LeafColumn
-	reader  *db.FileReader
+	reader  db.SectionLoader
 }
 
-func newProjection(file *parquet.File, reader *db.FileReader, columnNames ...string) Projections {
+func newProjection(file *parquet.File, reader db.SectionLoader, columnNames ...string) Projections {
 	columns := make([]parquet.LeafColumn, 0, len(columnNames))
 	for _, columnName := range columnNames {
 		column, ok := file.Schema().Lookup(columnName)

@@ -54,7 +54,7 @@ func TestPages(t *testing.T) {
 			expectedCursor: []int64{3, 6, 9},
 		},
 		{
-			/*
+			/**
 			  pages:     |__|__________|_____|
 			  selection:      |__| |__| |_|
 			*/

@@ -16,11 +16,11 @@ type RowFilter interface {
 type matchFunc func(parquet.Value) bool
 
 type decodingFilter struct {
-	reader  *db.FileReader
+	reader  db.SectionLoader
 	matches func(parquet.Value) bool
 }
 
-func NewDecodingFilter(reader *db.FileReader, matches matchFunc) RowFilter {
+func NewDecodingFilter(reader db.SectionLoader, matches matchFunc) RowFilter {
 	return &decodingFilter{
 		reader:  reader,
 		matches: matches,

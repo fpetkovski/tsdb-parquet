@@ -10,7 +10,7 @@ import (
 )
 
 type Scanner struct {
-	reader *db.FileReader
+	reader db.SectionLoader
 	file   *parquet.File
 
 	predicates Predicates
@@ -55,7 +55,7 @@ func LessThanOrEqual(column string, value parquet.Value) ScannerOption {
 	}
 }
 
-func NewScanner(file *parquet.File, reader *db.FileReader, options ...ScannerOption) *Scanner {
+func NewScanner(file *parquet.File, reader db.SectionLoader, options ...ScannerOption) *Scanner {
 	scanner := &Scanner{
 		file:       file,
 		reader:     reader,

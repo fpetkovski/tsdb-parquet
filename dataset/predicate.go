@@ -52,7 +52,7 @@ func (p Matcher) FilterRows(rowGroup parquet.RowGroup, selection SelectionResult
 	return p.filter.FilterRows(chunk, selection)
 }
 
-func newEqualsMatcher(reader *db.FileReader, column parquet.LeafColumn, value string) Matcher {
+func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value string) Matcher {
 	pqValue := parquet.ByteArrayValue([]byte(value))
 	compare := column.Node.Type().Compare
 
@@ -71,7 +71,7 @@ func newEqualsMatcher(reader *db.FileReader, column parquet.LeafColumn, value st
 	}
 }
 
-func newGTEMatcher(reader *db.FileReader, column parquet.LeafColumn, threshold parquet.Value) *Matcher {
+func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold parquet.Value) *Matcher {
 	compare := column.Node.Type().Compare
 	return &Matcher{
 		column: column,
@@ -88,7 +88,7 @@ func newGTEMatcher(reader *db.FileReader, column parquet.LeafColumn, threshold p
 	}
 }
 
-func newLTEMatcher(reader *db.FileReader, column parquet.LeafColumn, value parquet.Value) *Matcher {
+func newLTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, value parquet.Value) *Matcher {
 	compare := column.Node.Type().Compare
 	return &Matcher{
 		column: column,

@@ -17,6 +17,10 @@ import (
 
 const ReadBufferSize = 4 * 1024
 
+type SectionLoader interface {
+	LoadSection(from, to int64) error
+}
+
 type section struct {
 	from  int64
 	to    int64
