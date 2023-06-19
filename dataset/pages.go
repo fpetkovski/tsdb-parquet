@@ -32,7 +32,7 @@ func SelectPages(chunk parquet.ColumnChunk, ranges SelectionResult) RowIndexedPa
 	iPages := 0
 	index := make([]pageSelection, 0)
 	for iPages < chunk.OffsetIndex().NumPages() && iRange < len(ranges) {
-		pageRange := getPageIndex(chunk.OffsetIndex(), chunk.NumValues(), iPages)
+		pageRange := getPageSelection(iPages, chunk.OffsetIndex(), chunk.NumValues())
 		if ranges[iRange].overlaps(pageRange.rowRange) {
 			index = append(index, pageSelection{
 				offset: pageRange.offset,
@@ -91,7 +91,7 @@ func (p *selectedPages) Close() error {
 	return p.pages.Close()
 }
 
-func getPageIndex(offsetIndex parquet.OffsetIndex, numRows int64, iPages int) pageSelection {
+func getPageSelection(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) pageSelection {
 	firstRowIndex := offsetIndex.FirstRowIndex(iPages)
 	var lastRowIndex int64
 	if iPages < offsetIndex.NumPages()-1 {
