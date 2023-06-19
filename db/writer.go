@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/apache/arrow/go/v10/parquet/file"
 	"github.com/pkg/errors"
@@ -19,18 +19,14 @@ import (
 const (
 	MaxPageSize = 8 * 1024
 
-	bufferMaxRows      = 256 * 1024
-	dataFileSuffix     = ".parquet"
+	writeBufferSize = 256 * 1024
+	dataFileSuffix  = ".parquet"
 	metadataFileSuffix = ".metadata"
 )
 
-type WriterOption func(*Writer)
+var partRegex = regexp.MustCompile(`part.(\d+).parquet`)
 
-func PageBufferSize(value int) WriterOption {
-	return func(w *Writer) {
-		w.pageBufferSize = value
-	}
-}
+type WriterOption func(*Writer)
 
 type Writer struct {
 	dir    string
@@ -83,7 +79,7 @@ func (w *Writer) Write(chunk schema.Chunk) error {
 		return err
 	}
 
-	if w.buffer.NumRows() >= bufferMaxRows {
+	if w.buffer.NumRows() >= writeBufferSize {
 		if err := w.flushBuffer(); err != nil {
 			return err
 		}
@@ -103,7 +99,7 @@ func (w *Writer) Compact() error {
 		if fileName.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(fileName.Name(), dataFileSuffix) {
+		if !partRegex.MatchString(fileName.Name()) {
 			continue
 		}
 		fileReader, err := os.Open(w.dir + "/" + fileName.Name())
@@ -197,7 +193,7 @@ func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
 		w.schema.ParquetSchema(),
 		parquet.SortingWriterConfig(parquet.SortingColumns(w.sortingColumns...)),
 		parquet.DefaultWriterConfig(),
-		parquet.WriteBufferSize(bufferMaxRows),
+		parquet.WriteBufferSize(writeBufferSize),
 		parquet.PageBufferSize(w.pageBufferSize),
 		parquet.DataPageStatistics(true),
 		parquet.BloomFilters(w.bloomFilters...),
@@ -207,7 +203,7 @@ func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
 func (w *Writer) openBuffer() {
 	w.buffer = parquet.NewGenericBuffer[any](
 		w.schema.ParquetSchema(),
-		parquet.ColumnBufferCapacity(bufferMaxRows),
+		parquet.ColumnBufferCapacity(writeBufferSize),
 		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
 	)
 }

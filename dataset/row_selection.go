@@ -1,8 +1,6 @@
 package dataset
 
-import (
-	"golang.org/x/exp/slices"
-)
+import "golang.org/x/exp/slices"
 
 type rowRange struct {
 	from int64
@@ -14,7 +12,7 @@ func (r rowRange) length() int64 {
 }
 
 func (r rowRange) before(other rowRange) bool {
-	if r.to == other.to	 {
+	if r.to == other.to {
 		return r.from < other.from
 	}
 	return r.to < other.to
@@ -61,8 +59,24 @@ func (r RowSelection) Skip(from, to int64) RowSelection {
 	return append(r, skip(from, to))
 }
 
-func (r RowSelection) NumRows(totalRows int64) int64 {
-	return pickRanges(totalRows, r).NumRows()
+func SelectRows(numRows int64, skips ...RowSelection) SelectionResult {
+	if len(skips) == 0 {
+		return SelectionResult{pick(0, numRows)}
+	}
+
+	allRanges := make(RowSelection, 0, len(skips))
+	for _, selection := range skips {
+		allRanges = append(allRanges, selection...)
+	}
+	if len(allRanges) == 0 {
+		return SelectionResult{pick(0, numRows)}
+	}
+	slices.SortFunc(allRanges, func(a, b skipRange) bool {
+		return a.before(b.rowRange)
+	})
+
+	merged := mergeOverlappingRanges(allRanges)
+	return invertSkips(numRows, merged)
 }
 
 type pickRange struct {
@@ -81,26 +95,6 @@ func (s SelectionResult) NumRows() int64 {
 		numRows += r.length()
 	}
 	return numRows
-}
-
-func pickRanges(numRows int64, skips ...RowSelection) SelectionResult {
-	if len(skips) == 0 {
-		return SelectionResult{pick(0, numRows)}
-	}
-
-	allRanges := make(RowSelection, 0, len(skips))
-	for _, selection := range skips {
-		allRanges = append(allRanges, selection...)
-	}
-	if len(allRanges) == 0 {
-		return SelectionResult{pick(0, numRows)}
-	}
-	slices.SortFunc(allRanges, func(a, b skipRange) bool {
-		return a.before(b.rowRange)
-	})
-
-	merged := mergeOverlappingRanges(allRanges)
-	return invertSkips(numRows, merged)
 }
 
 func mergeOverlappingRanges(allRanges []skipRange) RowSelection {

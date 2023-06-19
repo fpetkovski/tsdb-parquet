@@ -65,7 +65,7 @@ func TestRowSelection(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			result := pickRanges(numRows, testCase.selections...)
+			result := SelectRows(numRows, testCase.selections...)
 			if len(result) != len(testCase.expected) {
 				t.Fatalf("expected %d ranges, got %d", len(testCase.expected), len(result))
 			}

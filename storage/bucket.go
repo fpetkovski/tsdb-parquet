@@ -32,7 +32,7 @@ func (i BucketReader) Attributes(ctx context.Context, name string) (objstore.Obj
 }
 
 func (i BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
-	fmt.Println("Read bucket at", off, len(p))
+	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p) / 1024))
 	rangeReader, err := i.bucket.GetRange(context.Background(), i.name, off, int64(len(p)))
 	if err != nil {
 		return 0, err

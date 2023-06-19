@@ -8,10 +8,18 @@ import (
 
 type Predicate interface {
 	SelectRows(rowGroup parquet.RowGroup) RowSelection
-	FilterRows(rowGroup parquet.RowGroup, selection SelectionResult) (RowSelection, error)
+	FilterRows(rowGroup parquet.RowGroup, selection RowSelection) (RowSelection, error)
 }
 
-type Predicates []Predicate
+type Predicates []columnPredicate
+
+func (ps Predicates) Len() int { return len(ps) }
+
+func (ps Predicates) Swap(i, j int) { ps[i], ps[j] = ps[j], ps[i] }
+
+func (ps Predicates) Less(i, j int) bool {
+	return db.CompareColumns(ps[i].column.Path[0], ps[j].column.Path[0])
+}
 
 func (ps Predicates) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 	var selection RowSelection
@@ -21,20 +29,19 @@ func (ps Predicates) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 	return selection
 }
 
-func (ps Predicates) FilterRows(rowGroup parquet.RowGroup, ranges SelectionResult) (RowSelection, error) {
-	var result RowSelection
+func (ps Predicates) FilterRows(rowGroup parquet.RowGroup, rowSelection RowSelection) (RowSelection, error) {
 	for _, p := range ps {
-		filteredRows, err := p.FilterRows(rowGroup, ranges)
+		filteredRows, err := p.FilterRows(rowGroup, rowSelection)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, filteredRows...)
+		rowSelection = append(rowSelection, filteredRows...)
 	}
 
-	return result, nil
+	return rowSelection, nil
 }
 
-type Matcher struct {
+type columnPredicate struct {
 	column parquet.LeafColumn
 	value  parquet.Value
 
@@ -42,21 +49,21 @@ type Matcher struct {
 	filter    RowFilter
 }
 
-func (p Matcher) SelectRows(rowGroup parquet.RowGroup) RowSelection {
+func (p columnPredicate) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
 	return p.selectors.SelectRows(chunk)
 }
 
-func (p Matcher) FilterRows(rowGroup parquet.RowGroup, selection SelectionResult) (RowSelection, error) {
+func (p columnPredicate) FilterRows(rowGroup parquet.RowGroup, selection RowSelection) (RowSelection, error) {
 	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
-	return p.filter.FilterRows(chunk, selection)
+	return p.filter.FilterRows(chunk, SelectRows(rowGroup.NumRows(), selection))
 }
 
-func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value string) Matcher {
+func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value string) columnPredicate {
 	pqValue := parquet.ByteArrayValue([]byte(value))
 	compare := column.Node.Type().Compare
 
-	return Matcher{
+	return columnPredicate{
 		column: column,
 		value:  pqValue,
 		selectors: []RowSelector{
@@ -71,9 +78,9 @@ func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value 
 	}
 }
 
-func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold parquet.Value) *Matcher {
+func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold parquet.Value) columnPredicate {
 	compare := column.Node.Type().Compare
-	return &Matcher{
+	return columnPredicate{
 		column: column,
 		value:  threshold,
 
@@ -88,9 +95,9 @@ func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold
 	}
 }
 
-func newLTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, value parquet.Value) *Matcher {
+func newLTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, value parquet.Value) columnPredicate {
 	compare := column.Node.Type().Compare
-	return &Matcher{
+	return columnPredicate{
 		column: column,
 		value:  value,
 
