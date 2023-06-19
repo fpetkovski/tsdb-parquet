@@ -86,6 +86,9 @@ func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (r *FileReader) LoadSection(from, to int64) error {
+	if from == to {
+		return nil
+	}
 	s, err := readSection(r.dataFileReader, from, to, r.FileSize())
 	if err != nil {
 		return err
