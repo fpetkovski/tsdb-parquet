@@ -66,8 +66,8 @@ func main() {
 	fmt.Println("Scanning...")
 	scanStart := time.Now()
 	scanner := dataset.NewScanner(pqFile, reader.SectionLoader(),
-		dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
-		dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
+		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
+		//dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
 		dataset.Equals(labels.MetricName, "nginx_ingress_controller_response_duration_seconds_bucket"),
 		dataset.Equals("namespace", "fbs-production"),
 	)
@@ -96,6 +96,10 @@ func printColumns(columns [][]parquet.Value, writer io.Writer) {
 	if len(columns) == 0 {
 		return
 	}
+	for _, c := range columns {
+		fmt.Println(len(c))
+	}
+
 	for i := 0; i < len(columns[0]); i++ {
 		for _, c := range columns {
 			_, _ = fmt.Fprintf(writer, c[i].String())

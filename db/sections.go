@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"fpetkovski/tsdb-parquet/storage"
 )
 
 var errSectionNotFound = errors.New("section not found")
@@ -38,7 +40,7 @@ func (s sectionCloser) Close() error {
 }
 
 type sectionLoader struct {
-	reader io.ReaderAt
+	reader *storage.BucketReader
 
 	fileSize int64
 	cacheDir string
@@ -47,7 +49,7 @@ type sectionLoader struct {
 	loadedSections []fileSection
 }
 
-func newFilesystemLoader(reader io.ReaderAt, fileSize int64, cacheDir string) (*sectionLoader, error) {
+func newFilesystemLoader(reader *storage.BucketReader, fileSize int64, cacheDir string) (*sectionLoader, error) {
 	cachedFiles, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return nil, err
@@ -153,29 +155,28 @@ func (f *sectionLoader) releaseSection(s fileSection) error {
 	return os.Remove(sectionFile)
 }
 
-func readSection(reader io.ReaderAt, from int64, to int64, fileSize int64, cacheDir string) (fileSection, error) {
+func readSection(bucket *storage.BucketReader, from int64, to int64, fileSize int64, cacheDir string) (fileSection, error) {
 	to += ReadBufferSize
 	if to > fileSize {
 		to = fileSize
 	}
 	buffer := make([]byte, to-from)
-	_, err := reader.ReadAt(buffer, from)
+	reader, err := bucket.ReaderAt(buffer, from)
 	if err != nil {
 		return fileSection{}, err
 	}
-
 	sectionName := fmt.Sprintf("%d-%d", from, to)
-	f, err := os.Create(path.Join(cacheDir, sectionName))
+	writer, err := os.Create(path.Join(cacheDir, sectionName))
 	if err != nil {
 		return fileSection{}, err
 	}
-	if _, err := f.Write(buffer); err != nil {
+	if _, err := io.Copy(writer, reader); err != nil {
 		return fileSection{}, err
 	}
 
 	return fileSection{
 		from:  from,
 		to:    to,
-		bytes: f,
+		bytes: writer,
 	}, nil
 }

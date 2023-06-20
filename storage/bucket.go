@@ -23,7 +23,6 @@ func NewBucketReader(name string, bucket objstore.Bucket) *BucketReader {
 		bucket: bucket,
 	}
 }
-
 func (r BucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	return r.bucket.Get(ctx, name)
 }
@@ -40,4 +39,9 @@ func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 
 	return io.ReadFull(rangeReader, p)
+}
+
+func (r BucketReader) ReaderAt(p []byte, off int64) (closer io.ReadCloser, err error) {
+	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p)/1024))
+	return r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
 }
