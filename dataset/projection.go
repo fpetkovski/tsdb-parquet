@@ -67,9 +67,11 @@ func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionR
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()
-	if err := p.reader.LoadSection(offsetFrom, offsetTo); err != nil {
+	sectionCloser, err := p.reader.LoadSection(offsetFrom, offsetTo)
+	if err != nil {
 		return nil, err
 	}
+	defer sectionCloser.Close()
 
 	values := make([]parquet.Value, 0, selection.NumRows())
 	for {

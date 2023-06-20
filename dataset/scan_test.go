@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/segmentio/parquet-go"
@@ -189,6 +190,13 @@ func createFile(parts [][]testRow) (*parquet.File, error) {
 	return parquet.OpenFile(readBuf, int64(len(buffer.Bytes())))
 }
 
+
 type nopSectionLoader struct{}
 
-func (n nopSectionLoader) LoadSection(_, _ int64) error { return nil }
+func (n nopSectionLoader) LoadSection(_, _ int64) (io.Closer, error) {
+	return &nopCloser{}, nil
+}
+
+type nopCloser struct{}
+
+func (n nopCloser) Close() error {return nil}
