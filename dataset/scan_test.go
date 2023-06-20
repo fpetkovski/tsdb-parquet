@@ -64,7 +64,6 @@ func TestScan(t *testing.T) {
 				twoColumnRow("val3", "val3"),
 			}},
 			predicates: []ScannerOption{
-				Projection("ColumnA", "ColumnC"),
 				Equals("ColumnA", "val2"),
 				Equals("ColumnB", "val5"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
