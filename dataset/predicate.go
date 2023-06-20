@@ -72,7 +72,7 @@ func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value 
 				return compare(min, pqValue) <= 0 && compare(max, pqValue) >= 0
 			}),
 		},
-		filter: NewDecodingFilter(reader, func(value parquet.Value) bool {
+		filter: NewDictionaryFilter(reader, func(value parquet.Value) bool {
 			return compare(value, pqValue) == 0
 		}),
 	}

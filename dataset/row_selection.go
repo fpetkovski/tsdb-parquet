@@ -76,7 +76,7 @@ func SelectRows(numRows int64, skips ...RowSelection) SelectionResult {
 	})
 
 	merged := mergeOverlappingRanges(allRanges)
-	return invertSkips(numRows, merged)
+	return skipsToPicks(numRows, merged)
 }
 
 type pickRange struct {
@@ -109,7 +109,7 @@ func mergeOverlappingRanges(allRanges []skipRange) RowSelection {
 	return merged
 }
 
-func invertSkips(numRows int64, skips RowSelection) SelectionResult {
+func skipsToPicks(numRows int64, skips RowSelection) SelectionResult {
 	result := make(SelectionResult, 0, len(skips))
 	fromRow := int64(0)
 	for _, s := range skips {

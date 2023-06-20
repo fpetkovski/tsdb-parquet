@@ -33,7 +33,8 @@ type FileReader struct {
 	metadata       *metadata.FileMetaData
 	dataFileSize   int64
 	dataFileReader *storage.BucketReader
-	loadedSections []section
+
+	fsReader *filesystemLoader
 }
 
 func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error) {
@@ -50,15 +51,15 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
+	fsReader := newFilesystemReader(dataReader, dataFileAtts.Size)
+
 	fmt.Println("Loading bloom filter section")
-	bloomFiltersSection, err := loadBloomFilters(dataReader, partMetadata, dataFileAtts.Size)
-	if err != nil {
+	if err := loadBloomFilters(fsReader, partMetadata); err != nil {
 		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
 
 	fmt.Println("Loading dictionary sections")
-	dictionarySections, err := loadDictionaryPages(dataReader, partMetadata, dataFileAtts.Size)
-	if err != nil {
+	if err := loadDictionaryPages(fsReader, partMetadata); err != nil {
 		return nil, errors.Wrap(err, "error reading column dictionaries")
 	}
 
@@ -67,7 +68,7 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		metadata:       partMetadata,
 		dataFileSize:   dataFileAtts.Size,
 		dataFileReader: dataReader,
-		loadedSections: append([]section{bloomFiltersSection}, dictionarySections...),
+		fsReader:       fsReader,
 	}
 
 	return reader, nil
@@ -77,28 +78,16 @@ func (r *FileReader) MetaData() *metadata.FileMetaData {
 	return r.metadata
 }
 
-func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
-	for _, s := range r.loadedSections {
-		if off >= s.from && off+int64(len(p)) <= s.to {
-			// We have the data in memory, copy it to p.
-			copy(p, s.bytes[off-s.from:off-s.from+int64(len(p))])
-			return len(p), nil
-		}
-	}
-
-	return r.dataFileReader.ReadAt(p, off)
+func (r *FileReader) SectionLoader() SectionLoader {
+	return r.fsReader
 }
 
-func (r *FileReader) LoadSection(from, to int64) error {
-	if from == to {
-		return nil
+func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
+	n, err = r.fsReader.ReadAt(p, off)
+	if err == errSectionNotFound {
+		return r.dataFileReader.ReadAt(p, off)
 	}
-	s, err := readSection(r.dataFileReader, from, to, r.FileSize())
-	if err != nil {
-		return err
-	}
-	r.loadedSections = append(r.loadedSections, s)
-	return nil
+	return n, err
 }
 
 func (r *FileReader) FileSize() int64 {
@@ -125,9 +114,8 @@ func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMe
 	return metadata.NewFileMetaData(metadataBytes, nil)
 }
 
-func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) ([]section, error) {
+func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) error {
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	var sections []section
 	for _, rowGroup := range metadata.RowGroups {
 		for _, column := range rowGroup.Columns {
@@ -142,13 +130,10 @@ func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				dictionarySection, err := readSection(dataReader, *dictionaryPageOffset, dataPageOffset, fileSize)
+				err := loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
 				if err != nil {
 					return
 				}
-				mu.Lock()
-				defer mu.Unlock()
-				sections = append(sections, dictionarySection)
 			}()
 		}
 	}
@@ -157,10 +142,10 @@ func loadDictionaryPages(dataReader io.ReaderAt, metadata *metadata.FileMetaData
 		return a.from < b.from
 	})
 
-	return sections, nil
+	return nil
 }
 
-func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData, fileSize int64) (section, error) {
+func loadBloomFilters(loader SectionLoader, metadata *metadata.FileMetaData) error {
 	var bloomFilterOffsets []int64
 	for _, rg := range metadata.RowGroups {
 		for _, c := range rg.Columns {
@@ -174,12 +159,13 @@ func loadBloomFilters(dataReader io.ReaderAt, metadata *metadata.FileMetaData, f
 	})
 
 	if len(bloomFilterOffsets) == 0 {
-		return section{}, nil
+		return nil
 	}
 
 	from := bloomFilterOffsets[0]
 	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024
-	return readSection(dataReader, from, to, fileSize)
+
+	return loader.LoadSection(from, to)
 }
 
 func readSection(reader io.ReaderAt, from int64, to int64, fileSize int64) (section, error) {

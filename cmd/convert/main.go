@@ -100,8 +100,8 @@ func main() {
 		if err := ir.Series(ps.At(), &lblBuilder, &chks); err != nil {
 			log.Fatal(err)
 		}
-		labels := lblBuilder.Labels()
 
+		lbls := lblBuilder.Labels()
 		for _, chunkMeta := range chks {
 			chk, err := chunkReader.Chunk(chunkMeta)
 			if err != nil {
@@ -109,7 +109,7 @@ func main() {
 			}
 			chunk := schema.Chunk{
 				SeriesID:   seriesID,
-				Labels:     labels,
+				Labels:     lbls,
 				MinT:       chunkMeta.MinTime,
 				MaxT:       chunkMeta.MaxTime,
 				ChunkBytes: chk.Bytes(),

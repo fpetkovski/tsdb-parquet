@@ -79,20 +79,20 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := s.predicates.SelectRows(rowGroup)
-		rowFilters, err := s.predicates.FilterRows(rowGroup, rowSelections)
+		filteredRows, err := s.predicates.FilterRows(rowGroup, rowSelections)
 		if err != nil {
 			return nil, err
 		}
 
-		filteredRows := SelectRows(rowGroup.NumRows(), append(rowSelections, rowFilters...))
-		result = append(result, filteredRows)
+		rowGroupRows := SelectRows(rowGroup.NumRows(), filteredRows)
+		result = append(result, rowGroupRows)
 
-		_, err = s.projection.ReadColumnRanges(rowGroup, filteredRows)
+		_, err = s.projection.ReadColumnRanges(rowGroup, rowGroupRows)
 		if err != nil {
 			return nil, err
 		}
 
-		//for i := int64(0); i < filteredRows.SelectedRows(); i++ {
+		//for i := int64(0); i < rowGroupRows.SelectedRows(); i++ {
 		//	for _, column := range columns {
 		//		fmt.Print(column[i])
 		//		fmt.Print(" ")

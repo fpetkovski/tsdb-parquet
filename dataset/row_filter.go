@@ -62,17 +62,18 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 				skipFrom = skipTo
 			}
 		}
+		parquet.Release(page)
 		selection = selection.Skip(skipFrom, skipTo)
 	}
 	return selection, nil
 }
 
 type dictionaryFilter struct {
-	reader  *db.FileReader
+	reader  db.SectionLoader
 	matches func(parquet.Value) bool
 }
 
-func NewDictionaryFilter(reader *db.FileReader, matches matchFunc) RowFilter {
+func NewDictionaryFilter(reader db.SectionLoader, matches matchFunc) RowFilter {
 	return &dictionaryFilter{
 		reader:  reader,
 		matches: matches,
@@ -107,7 +108,8 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 		})
 		if dictionaryValue == -1 {
 			selection = selection.Skip(cursor, page.NumRows())
-			continue
+			parquet.Release(page)
+			break
 		}
 
 		encodedValues := data.Int32()
@@ -120,6 +122,7 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 				skipFrom = skipTo
 			}
 		}
+		parquet.Release(page)
 		selection = selection.Skip(skipFrom, skipTo)
 	}
 	return selection, nil

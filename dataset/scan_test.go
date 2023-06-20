@@ -13,9 +13,11 @@ var columns = []string{"ColumnA", "ColumnB", "ColumnC", "ColumnD"}
 type testRow struct {
 	ColumnA string `parquet:",dict"`
 	ColumnB string `parquet:",dict"`
+	ColumnC string `parquet:",dict"`
+	ColumnD string `parquet:",dict"`
 }
 
-func makeTestRow(columnA string, columnB string) testRow {
+func twoColumnRow(columnA string, columnB string) testRow {
 	return testRow{ColumnA: columnA, ColumnB: columnB}
 }
 
@@ -32,9 +34,9 @@ func TestScan(t *testing.T) {
 			//	selection:    |_|
 			name: "single page, single predicate",
 			parts: [][]testRow{{
-				makeTestRow("val1", "val1"),
-				makeTestRow("val1", "val2"),
-				makeTestRow("val1", "val3"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val2"),
+				twoColumnRow("val1", "val3"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -49,17 +51,17 @@ func TestScan(t *testing.T) {
 			//	selection:           |_|
 			name: "single row selection",
 			parts: [][]testRow{{
-				makeTestRow("val1", "val1"),
-				makeTestRow("val1", "val2"),
-				makeTestRow("val1", "val3"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val2"),
+				twoColumnRow("val1", "val3"),
 			}, {
-				makeTestRow("val2", "val4"),
-				makeTestRow("val2", "val5"),
-				makeTestRow("val2", "val6"),
+				twoColumnRow("val2", "val4"),
+				twoColumnRow("val2", "val5"),
+				twoColumnRow("val2", "val6"),
 			}, {
-				makeTestRow("val3", "val1"),
-				makeTestRow("val3", "val2"),
-				makeTestRow("val3", "val3"),
+				twoColumnRow("val3", "val1"),
+				twoColumnRow("val3", "val2"),
+				twoColumnRow("val3", "val3"),
 			}},
 			predicates: []ScannerOption{
 				Project("ColumnA", "ColumnC"),
@@ -77,14 +79,14 @@ func TestScan(t *testing.T) {
 			//	selection:      |___|
 			name: "multi row selection",
 			parts: [][]testRow{{
-				makeTestRow("val1", "val1"),
-				makeTestRow("val1", "val1"),
-				makeTestRow("val1", "val2"),
-				makeTestRow("val2", "val2"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val2"),
+				twoColumnRow("val2", "val2"),
 			}, {
-				makeTestRow("val2", "val2"),
-				makeTestRow("val2", "val2"),
-				makeTestRow("val2", "val3"),
+				twoColumnRow("val2", "val2"),
+				twoColumnRow("val2", "val2"),
+				twoColumnRow("val2", "val3"),
 			}},
 			predicates: []ScannerOption{
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val2"))),
@@ -100,17 +102,17 @@ func TestScan(t *testing.T) {
 			//	selection:       |___| |___| |__|
 			name: "multiple disjoint rows",
 			parts: [][]testRow{{
-				makeTestRow("val1", "val1"),
-				makeTestRow("val2", "val2"),
-				makeTestRow("val2", "val2"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val2", "val2"),
+				twoColumnRow("val2", "val2"),
 			}, {
-				makeTestRow("val3", "val1"),
-				makeTestRow("val3", "val3"),
-				makeTestRow("val3", "val2"),
+				twoColumnRow("val3", "val1"),
+				twoColumnRow("val3", "val3"),
+				twoColumnRow("val3", "val2"),
 			}, {
-				makeTestRow("val3", "val2"),
-				makeTestRow("val3", "val1"),
-				makeTestRow("val3", "val2"),
+				twoColumnRow("val3", "val2"),
+				twoColumnRow("val3", "val1"),
+				twoColumnRow("val3", "val2"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -125,22 +127,22 @@ func TestScan(t *testing.T) {
 			//	selection:           |___| |___|  |_|
 			name: "different page sizes",
 			parts: [][]testRow{{
-				makeTestRow("val0", "val0"),
+				twoColumnRow("val0", "val0"),
 			}, {
-				makeTestRow("val1", "val1"),
-				makeTestRow("val2", "val1"),
-				makeTestRow("val3", "val2"),
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val2", "val1"),
+				twoColumnRow("val3", "val2"),
 			}, {
-				makeTestRow("val4", "val2"),
-				makeTestRow("val5", "val2"),
-				makeTestRow("val6", "val3"),
-				makeTestRow("val7", "val3"),
+				twoColumnRow("val4", "val2"),
+				twoColumnRow("val5", "val2"),
+				twoColumnRow("val6", "val3"),
+				twoColumnRow("val7", "val3"),
 			}, {
-				makeTestRow("val8", "val2"),
-				makeTestRow("val9", "val2"),
-				makeTestRow("val9", "val3"),
+				twoColumnRow("val8", "val2"),
+				twoColumnRow("val9", "val2"),
+				twoColumnRow("val9", "val3"),
 			}, {
-				makeTestRow("val9", "val2"),
+				twoColumnRow("val9", "val2"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -163,13 +165,13 @@ func TestScan(t *testing.T) {
 	}
 }
 
-func createFile(chunksParts [][]testRow) (*parquet.File, error) {
+func createFile(parts [][]testRow) (*parquet.File, error) {
 	var buffer bytes.Buffer
 	writer := parquet.NewGenericWriter[testRow](&buffer,
 		parquet.PageBufferSize(4),
 	)
 
-	for _, parts := range chunksParts {
+	for _, parts := range parts {
 		_, err := writer.Write(parts)
 		if err != nil {
 			return nil, err

@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"io"
+	"sync"
 
 	"github.com/segmentio/parquet-go"
 
@@ -30,14 +31,30 @@ func newProjection(file *parquet.File, reader db.SectionLoader, columnNames ...s
 }
 
 func (p *Projections) ReadColumnRanges(rowGroup parquet.RowGroup, selection SelectionResult) ([][]parquet.Value, error) {
-	columns := make([][]parquet.Value, 0, len(p.columns))
-	for _, column := range p.columns {
-		chunk := rowGroup.ColumnChunks()[column.ColumnIndex]
-		values, err := p.readColumn(chunk, selection)
+	columns := make([][]parquet.Value, len(p.columns))
+	var (
+		wg      sync.WaitGroup
+		errChan = make(chan error, len(p.columns))
+	)
+	wg.Add(len(p.columns))
+	for i, column := range p.columns {
+		go func(i int, columnIndex int) {
+			defer wg.Done()
+
+			chunk := rowGroup.ColumnChunks()[columnIndex]
+			values, err := p.readColumn(chunk, selection)
+			if err != nil {
+				errChan <- err
+			}
+			columns[i] = values
+		}(i, column.ColumnIndex)
+	}
+	wg.Wait()
+	close(errChan)
+	for err := range errChan {
 		if err != nil {
 			return nil, err
 		}
-		columns = append(columns, values)
 	}
 
 	return columns, nil
@@ -68,6 +85,7 @@ func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionR
 			return nil, err
 		}
 		values = append(values, pageValues[:n]...)
+		parquet.Release(page)
 	}
 
 	return values, nil
