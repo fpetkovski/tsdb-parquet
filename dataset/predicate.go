@@ -56,7 +56,7 @@ func (p columnPredicate) SelectRows(rowGroup parquet.RowGroup) RowSelection {
 
 func (p columnPredicate) FilterRows(rowGroup parquet.RowGroup, selection RowSelection) (RowSelection, error) {
 	chunk := rowGroup.ColumnChunks()[p.column.ColumnIndex]
-	return p.filter.FilterRows(chunk, SelectRows(rowGroup.NumRows(), selection))
+	return p.filter.FilterRows(chunk, SelectRows(rowGroup, selection))
 }
 
 func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value string) columnPredicate {

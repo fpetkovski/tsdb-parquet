@@ -84,7 +84,7 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 			return nil, err
 		}
 
-		rowGroupRows := SelectRows(rowGroup.NumRows(), filteredRows)
+		rowGroupRows := SelectRows(rowGroup, filteredRows)
 		result = append(result, rowGroupRows)
 
 		_, err = s.projection.ReadColumnRanges(rowGroup, rowGroupRows)

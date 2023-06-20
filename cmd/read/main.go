@@ -64,6 +64,7 @@ func main() {
 		dataset.Equals("namespace", "fbs-production"),
 		dataset.Project(schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone"),
 	)
+	
 
 	selection, err := scanner.Scan()
 	if err != nil {

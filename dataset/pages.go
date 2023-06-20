@@ -23,7 +23,8 @@ type selectedPages struct {
 	pages           parquet.Pages
 }
 
-func SelectPages(chunk parquet.ColumnChunk, ranges SelectionResult) RowIndexedPages {
+func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexedPages {
+	ranges := selection.ranges
 	if len(ranges) == 0 {
 		return &emptyPageSelection{}
 	}

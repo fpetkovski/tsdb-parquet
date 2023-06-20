@@ -42,7 +42,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val2"),
 			},
 			expected: SelectionResult{
-				pick(1, 2),
+				ranges: []pickRange{pick(1, 2)},
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestScan(t *testing.T) {
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			},
 			expected: SelectionResult{
-				pick(4, 5),
+				ranges: []pickRange{pick(4, 5)},
 			},
 		},
 		{
@@ -93,7 +93,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val2"),
 			},
 			expected: SelectionResult{
-				pick(3, 6),
+				ranges: []pickRange{pick(3, 6)},
 			},
 		},
 		{
@@ -118,7 +118,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val2"),
 			},
 			expected: SelectionResult{
-				pick(1, 3), pick(5, 7), pick(8, 9),
+				ranges: []pickRange{pick(1, 3), pick(5, 7), pick(8, 9)},
 			},
 		},
 		{
@@ -148,7 +148,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val2"),
 			},
 			expected: SelectionResult{
-				pick(3, 6), pick(8, 10), pick(11, 12),
+				ranges: []pickRange{pick(3, 6), pick(8, 10), pick(11, 12)},
 			},
 		},
 	}
@@ -160,6 +160,10 @@ func TestScan(t *testing.T) {
 			scanner := NewScanner(pqFile, &nopSectionLoader{}, tcase.predicates...)
 			rowRanges, err := scanner.Scan()
 			require.NoError(t, err)
+
+			for _, rowGroup := range pqFile.RowGroups() {
+				tcase.expected.rowGroup = rowGroup
+			}
 			require.Equal(t, tcase.expected, rowRanges[0])
 		})
 	}

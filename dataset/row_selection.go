@@ -1,6 +1,9 @@
 package dataset
 
-import "golang.org/x/exp/slices"
+import (
+	"github.com/segmentio/parquet-go"
+	"golang.org/x/exp/slices"
+)
 
 type rowRange struct {
 	from int64
@@ -59,9 +62,12 @@ func (r RowSelection) Skip(from, to int64) RowSelection {
 	return append(r, skip(from, to))
 }
 
-func SelectRows(numRows int64, skips ...RowSelection) SelectionResult {
+func SelectRows(rowGroup parquet.RowGroup, skips ...RowSelection) SelectionResult {
 	if len(skips) == 0 {
-		return SelectionResult{pick(0, numRows)}
+		return SelectionResult{
+			rowGroup: rowGroup,
+			ranges:   []pickRange{pick(0, rowGroup.NumRows())},
+		}
 	}
 
 	allRanges := make(RowSelection, 0, len(skips))
@@ -69,14 +75,17 @@ func SelectRows(numRows int64, skips ...RowSelection) SelectionResult {
 		allRanges = append(allRanges, selection...)
 	}
 	if len(allRanges) == 0 {
-		return SelectionResult{pick(0, numRows)}
+		return SelectionResult{
+			rowGroup: rowGroup,
+			ranges:   []pickRange{pick(0, rowGroup.NumRows())},
+		}
 	}
 	slices.SortFunc(allRanges, func(a, b skipRange) bool {
 		return a.before(b.rowRange)
 	})
 
 	merged := mergeOverlappingRanges(allRanges)
-	return skipsToPicks(numRows, merged)
+	return pickRanges(rowGroup, merged)
 }
 
 type pickRange struct {
@@ -87,11 +96,14 @@ func pick(from, to int64) pickRange {
 	return pickRange{rowRange{from: from, to: to}}
 }
 
-type SelectionResult []pickRange
+type SelectionResult struct {
+	rowGroup parquet.RowGroup
+	ranges   []pickRange
+}
 
 func (s SelectionResult) NumRows() int64 {
 	var numRows int64
-	for _, r := range s {
+	for _, r := range s.ranges {
 		numRows += r.length()
 	}
 	return numRows
@@ -109,19 +121,22 @@ func mergeOverlappingRanges(allRanges []skipRange) RowSelection {
 	return merged
 }
 
-func skipsToPicks(numRows int64, skips RowSelection) SelectionResult {
-	result := make(SelectionResult, 0, len(skips))
+func pickRanges(rowGroup parquet.RowGroup, skips RowSelection) SelectionResult {
+	ranges := make([]pickRange, 0, len(skips))
 	fromRow := int64(0)
 	for _, s := range skips {
 		if s.from > fromRow {
-			result = append(result, pick(fromRow, s.from))
+			ranges = append(ranges, pick(fromRow, s.from))
 		}
 		fromRow = s.to
 	}
-	if fromRow < numRows {
-		result = append(result, pick(fromRow, numRows))
+	if fromRow < rowGroup.NumRows() {
+		ranges = append(ranges, pick(fromRow, rowGroup.NumRows()))
 	}
-	return result
+	return SelectionResult{
+		rowGroup: rowGroup,
+		ranges:   ranges,
+	}
 }
 
 func minInt64(a, b int64) int64 {
