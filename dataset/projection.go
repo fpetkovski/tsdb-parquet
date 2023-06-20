@@ -10,9 +10,10 @@ import (
 )
 
 type Projections struct {
+	columns []parquet.LeafColumn
+	reader  db.SectionLoader
+
 	selection SelectionResult
-	columns   []parquet.LeafColumn
-	reader    db.SectionLoader
 }
 
 func Projection(selection SelectionResult, reader db.SectionLoader, columnNames ...string) Projections {
