@@ -1,9 +1,7 @@
 package dataset
 
 import (
-	"fmt"
 	"sort"
-	"time"
 
 	"github.com/segmentio/parquet-go"
 
@@ -15,16 +13,9 @@ type Scanner struct {
 	file   *parquet.File
 
 	predicates Predicates
-	projection Projections
 }
 
 type ScannerOption func(*Scanner)
-
-func Project(columns ...string) ScannerOption {
-	return func(scanner *Scanner) {
-		scanner.projection = newProjection(scanner.file, scanner.reader, columns...)
-	}
-}
 
 func Equals(column string, value string) ScannerOption {
 	return func(scanner *Scanner) {
@@ -70,12 +61,6 @@ func NewScanner(file *parquet.File, reader db.SectionLoader, options ...ScannerO
 }
 
 func (s *Scanner) Scan() ([]SelectionResult, error) {
-	fmt.Println("Scanning...")
-	start := time.Now()
-	defer func() {
-		fmt.Println("Time taken:", time.Since(start))
-	}()
-
 	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := s.predicates.SelectRows(rowGroup)
@@ -86,19 +71,6 @@ func (s *Scanner) Scan() ([]SelectionResult, error) {
 
 		rowGroupRows := SelectRows(rowGroup, filteredRows)
 		result = append(result, rowGroupRows)
-
-		_, err = s.projection.ReadColumnRanges(rowGroup, rowGroupRows)
-		if err != nil {
-			return nil, err
-		}
-
-		//for i := int64(0); i < rowGroupRows.SelectedRows(); i++ {
-		//	for _, column := range columns {
-		//		fmt.Print(column[i])
-		//		fmt.Print(" ")
-		//	}
-		//	fmt.Println()
-		//}
 	}
 
 	return result, nil

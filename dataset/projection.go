@@ -10,27 +10,28 @@ import (
 )
 
 type Projections struct {
-	scanner *Scanner
-	columns []parquet.LeafColumn
-	reader  db.SectionLoader
+	selection SelectionResult
+	columns   []parquet.LeafColumn
+	reader    db.SectionLoader
 }
 
-func newProjection(file *parquet.File, reader db.SectionLoader, columnNames ...string) Projections {
+func Projection(selection SelectionResult, reader db.SectionLoader, columnNames ...string) Projections {
 	columns := make([]parquet.LeafColumn, 0, len(columnNames))
 	for _, columnName := range columnNames {
-		column, ok := file.Schema().Lookup(columnName)
+		column, ok := selection.rowGroup.Schema().Lookup(columnName)
 		if ok {
 			columns = append(columns, column)
 		}
 	}
 
 	return Projections{
-		reader:  reader,
-		columns: columns,
+		selection: selection,
+		reader:    reader,
+		columns:   columns,
 	}
 }
 
-func (p *Projections) ReadColumnRanges(rowGroup parquet.RowGroup, selection SelectionResult) ([][]parquet.Value, error) {
+func (p *Projections) ReadColumnRanges() ([][]parquet.Value, error) {
 	columns := make([][]parquet.Value, len(p.columns))
 	var (
 		wg      sync.WaitGroup
@@ -41,8 +42,8 @@ func (p *Projections) ReadColumnRanges(rowGroup parquet.RowGroup, selection Sele
 		go func(i int, columnIndex int) {
 			defer wg.Done()
 
-			chunk := rowGroup.ColumnChunks()[columnIndex]
-			values, err := p.readColumn(chunk, selection)
+			chunk := p.selection.rowGroup.ColumnChunks()[columnIndex]
+			values, err := p.readColumn(chunk, p.selection)
 			if err != nil {
 				errChan <- err
 			}
