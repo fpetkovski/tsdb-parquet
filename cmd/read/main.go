@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -11,11 +12,13 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
-	"github.com/thanos-io/objstore/providers/filesystem"
+	"github.com/thanos-io/objstore/providers/gcs"
+	"gopkg.in/yaml.v3"
 
 	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
 	"fpetkovski/tsdb-parquet/schema"
+	"fpetkovski/tsdb-parquet/storage"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -31,29 +34,30 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	//config := storage.GCSConfig{
-	//	Bucket: "shopify-o11y-metrics-scratch",
-	//}
-	//conf, err := yaml.Marshal(config)
-	//if err != nil {
-	//	log.Fatalln(err)
-	//}
-	//
-	//bucket, err := gcs.NewBucket(context.Background(), nil, conf, "parquet-reader")
-	//if err != nil {
-	//	log.Fatalln(err)
-	//}
-
-	bucket, err := filesystem.NewBucket("./out")
+	config := storage.GCSConfig{
+		Bucket: "shopify-o11y-metrics-scratch",
+	}
+	conf, err := yaml.Marshal(config)
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	bucket, err := gcs.NewBucket(context.Background(), nil, conf, "parquet-reader")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	//bucket, err := filesystem.NewBucket("./out")
+	//if err != nil {
+	//	log.Fatalln(err)
+	//}
 
 	reader, err := db.OpenFileReader("compact-2.7", bucket)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
+	fmt.Println("Opening parquet file")
 	pqFile, err := parquet.OpenFile(reader, reader.FileSize(), parquet.ReadBufferSize(db.ReadBufferSize))
 	if err != nil {
 		log.Fatalln(err)
@@ -67,7 +71,7 @@ func main() {
 		dataset.Equals(labels.MetricName, "nginx_ingress_controller_response_duration_seconds_bucket"),
 		//dataset.Equals("namespace", "fbs-production"),
 	)
-	selections, err := scanner.Scan()
+	selections, err := scanner.Select()
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -75,7 +79,7 @@ func main() {
 
 	fmt.Println("Reading columns...")
 	projectStart := time.Now()
-	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone"}
+	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone", schema.ChunkBytesColumn}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
 		projection := dataset.Projection(selection, reader.SectionLoader(), projectionColumns...)
@@ -94,9 +98,9 @@ func printColumns(columns [][]parquet.Value, writer io.Writer) {
 	}
 	for i := 0; i < len(columns[0]); i++ {
 		for _, c := range columns {
-			fmt.Fprintf(writer, c[i].String())
-			fmt.Fprintf(writer, " ")
+			_, _ = fmt.Fprintf(writer, c[i].String())
+			_, _ = fmt.Fprintf(writer, " ")
 		}
-		fmt.Fprintln(writer)
+		_, _ = fmt.Fprintln(writer)
 	}
 }

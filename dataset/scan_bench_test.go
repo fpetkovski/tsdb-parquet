@@ -38,7 +38,7 @@ func BenchmarkScanner_Scan(b *testing.B) {
 	b.ReportAllocs()
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = scanner.Scan()
+		_, err = scanner.Select()
 		require.NoError(b, err)
 	}
 }

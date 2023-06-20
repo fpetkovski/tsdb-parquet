@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/apache/arrow/go/v10/parquet/metadata"
 	"github.com/pkg/errors"
 	"github.com/segmentio/parquet-go"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 
 	"fpetkovski/tsdb-parquet/storage"
 )
@@ -32,9 +32,9 @@ type FileReader struct {
 	file           *parquet.File
 	metadata       *metadata.FileMetaData
 	dataFileSize   int64
-	dataFileReader *storage.BucketReader
+	dataFileReader io.ReaderAt
 
-	fsReader *filesystemLoader
+	fsReader *sectionLoader
 }
 
 func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error) {
@@ -115,8 +115,8 @@ func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMe
 }
 
 func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) error {
-	var wg sync.WaitGroup
-	var sections []section
+	var errGroup errgroup.Group
+	errGroup.SetLimit(16)
 	for _, rowGroup := range metadata.RowGroups {
 		for _, column := range rowGroup.Columns {
 			dataPageOffset := column.MetaData.DataPageOffset
@@ -124,23 +124,14 @@ func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) 
 			if dictionaryPageOffset == nil {
 				continue
 			}
-			if dataPageOffset-*dictionaryPageOffset < 4*1024 {
-				dataPageOffset = *dictionaryPageOffset + 4*1024
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				err := loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
-				if err != nil {
-					return
-				}
-			}()
+			errGroup.Go(func() error {
+				return loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
+			})
 		}
 	}
-	wg.Wait()
-	slices.SortFunc(sections, func(a, b section) bool {
-		return a.from < b.from
-	})
+	if err := errGroup.Wait(); err != nil {
+		return err
+	}
 
 	return nil
 }

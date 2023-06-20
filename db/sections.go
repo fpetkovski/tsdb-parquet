@@ -8,7 +8,7 @@ import (
 
 var errSectionNotFound = errors.New("section not found")
 
-type filesystemLoader struct {
+type sectionLoader struct {
 	fileSize int64
 	reader   io.ReaderAt
 
@@ -16,15 +16,15 @@ type filesystemLoader struct {
 	loadedSections []section
 }
 
-func newFilesystemReader(reader io.ReaderAt, fileSize int64) *filesystemLoader {
-	return &filesystemLoader{
+func newFilesystemReader(reader io.ReaderAt, fileSize int64) *sectionLoader {
+	return &sectionLoader{
 		fileSize:       fileSize,
 		reader:         reader,
 		loadedSections: make([]section, 0),
 	}
 }
 
-func (f *filesystemLoader) LoadSection(from, to int64) error {
+func (f *sectionLoader) LoadSection(from, to int64) error {
 	s, err := readSection(f.reader, from, to, f.fileSize)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func (f *filesystemLoader) LoadSection(from, to int64) error {
 	return nil
 }
 
-func (f *filesystemLoader) ReadAt(p []byte, off int64) (int, error) {
+func (f *sectionLoader) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 

@@ -23,17 +23,18 @@ func NewBucketReader(name string, bucket objstore.Bucket) *BucketReader {
 		bucket: bucket,
 	}
 }
-func (i BucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	return i.bucket.Get(ctx, name)
+
+func (r BucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	return r.bucket.Get(ctx, name)
 }
 
-func (i BucketReader) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
-	return i.bucket.Attributes(ctx, name)
+func (r BucketReader) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	return r.bucket.Attributes(ctx, name)
 }
 
-func (i BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
-	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p) / 1024))
-	rangeReader, err := i.bucket.GetRange(context.Background(), i.name, off, int64(len(p)))
+func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
+	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p)/1024))
+	rangeReader, err := r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
 	if err != nil {
 		return 0, err
 	}

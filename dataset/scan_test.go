@@ -157,7 +157,7 @@ func TestScan(t *testing.T) {
 			pqFile, err := createFile(tcase.parts)
 
 			scanner := NewScanner(pqFile, &nopSectionLoader{}, tcase.predicates...)
-			rowRanges, err := scanner.Scan()
+			rowRanges, err := scanner.Select()
 			require.NoError(t, err)
 
 			for _, rowGroup := range pqFile.RowGroups() {

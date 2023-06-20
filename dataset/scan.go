@@ -60,7 +60,7 @@ func NewScanner(file *parquet.File, reader db.SectionLoader, options ...ScannerO
 	return scanner
 }
 
-func (s *Scanner) Scan() ([]SelectionResult, error) {
+func (s *Scanner) Select() ([]SelectionResult, error) {
 	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := s.predicates.SelectRows(rowGroup)
