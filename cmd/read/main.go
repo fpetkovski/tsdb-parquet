@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"runtime/pprof"
@@ -85,21 +86,20 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		printColumns(columns)
+		printColumns(columns, io.Discard)
 	}
 	fmt.Println("Time taken:", time.Since(projectStart))
 }
 
-func printColumns(columns [][]parquet.Value) {
-	return
+func printColumns(columns [][]parquet.Value, writer io.Writer) {
 	if len(columns) == 0 {
 		return
 	}
 	for i := 0; i < len(columns[0]); i++ {
 		for _, c := range columns {
-			fmt.Print(c[i])
-			fmt.Print(" ")
+			fmt.Fprintf(writer, c[i].String())
+			fmt.Fprintf(writer, " ")
 		}
-		fmt.Println()
+		fmt.Fprintln(writer)
 	}
 }
