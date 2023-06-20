@@ -79,6 +79,7 @@ func main() {
 	projectStart := time.Now()
 	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone"}
 	for _, selection := range selections {
+		fmt.Println("Projecting", selection.NumRows(), "rows")
 		projection := dataset.Projection(selection, reader.SectionLoader(), projectionColumns...)
 		columns, err := projection.ReadColumnRanges()
 		if err != nil {
