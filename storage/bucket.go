@@ -38,8 +38,6 @@ func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
 	defer func() {
 		fmt.Printf("Read %d bytes in %s. Estimated throughput: %f MB/s\n", n, time.Since(start), float64(n)/1024/1024/time.Since(start).Seconds())
 	}()
-
-	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p)/1024))
 	rangeReader, err := r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
 	if err != nil {
 		return 0, err
