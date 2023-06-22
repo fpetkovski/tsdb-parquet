@@ -25,9 +25,7 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:8080", nil))
 	}()
-
-	parquet.RegisterEncoding(schema.XOREncoding, schema.XorEncoding{})
-
+	
 	tsdbBlock, block, err := openBlock("data", os.Args[1])
 	if err != nil {
 		log.Fatal(err)
