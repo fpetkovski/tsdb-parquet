@@ -36,7 +36,7 @@ func (r BucketReader) Attributes(ctx context.Context, name string) (objstore.Obj
 func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
 	start := time.Now()
 	defer func() {
-		fmt.Printf("Read %d bytes in %s. Estimated throughput: %f MB/s\n", n, time.Since(start), float64(n)/1024/1024/time.Since(start).Seconds())
+		fmt.Printf("Read %dKB in %s. Estimated throughput: %f MB/s\n", n/1024, time.Since(start), float64(n)/1024/1024/time.Since(start).Seconds())
 	}()
 	rangeReader, err := r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
 	if err != nil {

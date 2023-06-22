@@ -72,6 +72,7 @@ func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionR
 	}
 
 	values := make([]parquet.Value, 0, selection.NumRows())
+	pageValues := make([]parquet.Value, 5000)
 	for {
 		page, _, err := pages.ReadPage()
 		if err == io.EOF {
@@ -81,7 +82,6 @@ func (p *Projections) readColumn(chunk parquet.ColumnChunk, selection SelectionR
 			return nil, err
 		}
 
-		pageValues := make([]parquet.Value, page.NumValues())
 		n, err := page.Values().ReadValues(pageValues)
 		if err != nil && err != io.EOF {
 			return nil, err
