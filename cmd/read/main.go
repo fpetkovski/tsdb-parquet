@@ -79,7 +79,7 @@ func main() {
 
 	fmt.Println("Reading columns...")
 	projectStart := time.Now()
-	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", "pod", "zone", schema.ChunkBytesColumn}
+	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", schema.ChunkBytesColumn}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
 		projection := dataset.Projection(selection, reader.SectionLoader(), projectionColumns...)
