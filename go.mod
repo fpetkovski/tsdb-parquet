@@ -8,7 +8,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.43.0
 	github.com/schollz/progressbar/v3 v3.13.1
-	github.com/segmentio/parquet-go v0.0.0-20230404173032-05ed5ed000b1
+	github.com/segmentio/parquet-go v0.0.0-20230622230624-510764ae9e80
 	github.com/stretchr/testify v1.8.2
 	github.com/thanos-io/objstore v0.0.0-20220715165016-ce338803bc1e
 	golang.org/x/exp v0.0.0-20230307190834-24139beb5833
