@@ -13,13 +13,13 @@ type RowIndexedPages interface {
 }
 
 type pageSelection struct {
-	offset   int64
-	rowRange rowRange
+	pageOffset int64
+	rowRange   rowRange
 }
 
 type selectedPages struct {
 	currentRowIndex int64
-	index           []pageSelection
+	selected        []pageSelection
 	pages           parquet.Pages
 }
 
@@ -31,42 +31,38 @@ func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexe
 
 	iRange := 0
 	iPages := 0
-	index := make([]pageSelection, 0)
+	selected := make([]pageSelection, 0)
 	for iPages < chunk.OffsetIndex().NumPages() && iRange < len(ranges) {
-		pageRange := getPageSelection(iPages, chunk.OffsetIndex(), chunk.NumValues())
-		if ranges[iRange].overlaps(pageRange.rowRange) {
-			index = append(index, pageSelection{
-				offset: pageRange.offset,
-				rowRange: rowRange{
-					from: maxInt64(ranges[iRange].from, pageRange.rowRange.from),
-					to:   minInt64(ranges[iRange].to, pageRange.rowRange.to),
-				},
-			})
+
+		currentPage := getCurrentPage(iPages, chunk.OffsetIndex(), chunk.NumValues())
+		currentRange := ranges[iRange]
+		if currentRange.overlaps(currentPage.rowRange) {
+			currentPage.rowRange = currentPage.rowRange.intersect(currentRange.rowRange)
+			selected = append(selected, currentPage)
 		}
 
-		if ranges[iRange].before(pageRange.rowRange) {
+		if ranges[iRange].before(currentPage.rowRange) {
 			iRange++
 		} else {
 			iPages++
 		}
 	}
-	if len(index) == 0 {
+	if len(selected) == 0 {
 		return &emptyPageSelection{}
 	}
 
 	return &selectedPages{
-		pages: chunk.Pages(),
-		index: index,
+		pages:    chunk.Pages(),
+		selected: selected,
 	}
 }
 
 func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
-	if len(p.index) == 0 {
+	if len(p.selected) == 0 {
 		return nil, 0, io.EOF
 	}
-	pageRows := p.index[0].rowRange
-	p.index = p.index[1:]
-
+	var pageRows rowRange
+	pageRows, p.selected = p.selected[0].rowRange, p.selected[1:]
 	if pageRows.from > p.currentRowIndex {
 		err := p.pages.SeekToRow(pageRows.from)
 		if err != nil {
@@ -87,14 +83,14 @@ func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
 }
 
 func (p *selectedPages) OffsetRange() (int64, int64) {
-	return p.index[0].offset, p.index[len(p.index)-1].offset
+	return p.selected[0].pageOffset, p.selected[len(p.selected)-1].pageOffset
 }
 
 func (p *selectedPages) Close() error {
 	return p.pages.Close()
 }
 
-func getPageSelection(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) pageSelection {
+func getCurrentPage(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) pageSelection {
 	firstRowIndex := offsetIndex.FirstRowIndex(iPages)
 	var lastRowIndex int64
 	if iPages < offsetIndex.NumPages()-1 {
@@ -103,8 +99,8 @@ func getPageSelection(iPages int, offsetIndex parquet.OffsetIndex, numRows int64
 		lastRowIndex = numRows
 	}
 	return pageSelection{
-		offset:   offsetIndex.Offset(iPages),
-		rowRange: rowRange{from: firstRowIndex, to: lastRowIndex},
+		pageOffset: offsetIndex.Offset(iPages),
+		rowRange:   rowRange{from: firstRowIndex, to: lastRowIndex},
 	}
 }
 
@@ -115,3 +111,4 @@ func (e emptyPageSelection) ReadPage() (parquet.Page, int64, error) { return nil
 func (e emptyPageSelection) SeekToRow(i int64) error     { return io.EOF }
 func (e emptyPageSelection) OffsetRange() (int64, int64) { return 0, 0 }
 func (e emptyPageSelection) Close() error                { return nil }
+

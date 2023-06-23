@@ -26,6 +26,13 @@ func (r rowRange) overlaps(other rowRange) bool {
 	return !disjoint
 }
 
+func (r rowRange) intersect(other rowRange) rowRange {
+	return rowRange{
+		from: maxInt64(r.from, other.from),
+		to:   minInt64(r.to, other.to),
+	}
+}
+
 type skipRange struct {
 	rowRange
 }
@@ -92,21 +99,21 @@ type pickRange struct {
 	rowRange
 }
 
+func (p pickRange) split(batchSize int64) []pickRange {
+	if p.length() <= batchSize {
+		return []pickRange{p}
+	}
+
+	ranges := make([]pickRange, 0, p.length()/batchSize+1)
+	for from := p.from; from < p.to; from += batchSize {
+		to := minInt64(from+batchSize, p.to)
+		ranges = append(ranges, pick(from, to))
+	}
+	return ranges
+}
+
 func pick(from, to int64) pickRange {
 	return pickRange{rowRange{from: from, to: to}}
-}
-
-type SelectionResult struct {
-	rowGroup parquet.RowGroup
-	ranges   []pickRange
-}
-
-func (s SelectionResult) NumRows() int64 {
-	var numRows int64
-	for _, r := range s.ranges {
-		numRows += r.length()
-	}
-	return numRows
 }
 
 func mergeOverlappingRanges(allRanges []skipRange) RowSelection {

@@ -94,7 +94,7 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 	var numMatches int64
 	var selection RowSelection
 	for {
-		page, cursor, err := pages.ReadPage()
+		page, firstRow, err := pages.ReadPage()
 		if err == io.EOF {
 			break
 		}
@@ -107,13 +107,13 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 			dictionaryValue = getDictionaryEncodedValue(page, r.matches)
 		})
 		if dictionaryValue == -1 {
-			selection = selection.Skip(cursor, page.NumRows())
+			selection = selection.Skip(firstRow, page.NumRows())
 			parquet.Release(page)
 			break
 		}
 
 		encodedValues := data.Int32()
-		skipFrom, skipTo := cursor, cursor
+		skipFrom, skipTo := firstRow, firstRow
 		for _, val := range encodedValues {
 			skipTo++
 			if val == dictionaryValue {

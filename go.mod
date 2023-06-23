@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/apache/arrow/go/v10 v10.0.1
-	github.com/keisku/gorilla v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.43.0
 	github.com/schollz/progressbar/v3 v3.13.1
@@ -12,6 +11,7 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/thanos-io/objstore v0.0.0-20220715165016-ce338803bc1e
 	golang.org/x/exp v0.0.0-20230307190834-24139beb5833
+	golang.org/x/sync v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -49,6 +49,7 @@ require (
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.16.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
@@ -74,7 +75,6 @@ require (
 	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
 	golang.org/x/text v0.8.0 // indirect

@@ -19,6 +19,9 @@ import (
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var heapprofile = flag.String("heapprofile", "", "write heap profile to file")
+
+const batchSize = 16 * 1024
 
 func main() {
 	flag.Parse()
@@ -29,6 +32,15 @@ func main() {
 		}
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
+	}
+	if *heapprofile != "" {
+		defer func() {
+			f, err := os.Create(*heapprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.WriteHeapProfile(f)
+		}()
 	}
 
 	//config := storage.GCSConfig{
@@ -76,15 +88,22 @@ func main() {
 
 	fmt.Println("Reading columns...")
 	projectStart := time.Now()
-	projectionColumns := []string{schema.MinTColumn, labels.MetricName, "namespace", schema.ChunkBytesColumn}
+	projectionColumns := []string{labels.MetricName, "namespace", schema.MinTColumn, schema.ChunkBytesColumn}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
-		projection := dataset.ProjectColumns(selection, reader.SectionLoader(), projectionColumns...)
-		columns, err := projection.ReadColumnRanges()
-		if err != nil {
-			log.Fatalln(err)
+		projection := dataset.ProjectColumns(selection, reader.SectionLoader(), batchSize, projectionColumns...)
+		defer projection.Close()
+		for {
+			columns, err := projection.NextBatch()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Fatalln(err)
+			}
+			printColumns(columns, io.Discard)
+			projection.Release(columns)
 		}
-		printColumns(columns, io.Discard)
 	}
 	fmt.Println("Time taken:", time.Since(projectStart))
 }
@@ -93,9 +112,10 @@ func printColumns(columns [][]parquet.Value, writer io.Writer) {
 	if len(columns) == 0 {
 		return
 	}
+
 	for i := 0; i < len(columns[0]); i++ {
 		for _, c := range columns {
-			_, _ = fmt.Fprintf(writer, c[i].String())
+			_, _ = fmt.Fprintf(writer, "%s", c[i])
 			_, _ = fmt.Fprintf(writer, " ")
 		}
 		_, _ = fmt.Fprintln(writer)

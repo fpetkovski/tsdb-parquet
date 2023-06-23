@@ -32,13 +32,6 @@ func newStringColumn(name string) *column {
 	return newColumn(name, node)
 }
 
-func newFloat64Column(name string) *column {
-	node := parquet.Leaf(parquet.DoubleType)
-	node = parquet.Encoded(node, &XorEncoding{})
-	node = parquet.Compressed(node, &zstd.Codec{})
-	return newColumn(name, node)
-}
-
 func newByteArrayColumn(name string) *column {
 	node := parquet.Leaf(parquet.ByteArrayType)
 	node = parquet.Encoded(node, &parquet.DeltaLengthByteArray)
