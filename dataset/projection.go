@@ -16,7 +16,8 @@ type Projections struct {
 	selection SelectionResult
 }
 
-func Projection(selection SelectionResult, reader db.SectionLoader, columnNames ...string) Projections {
+func ProjectColumns(selection SelectionResult, reader db.SectionLoader, columnNames ...string) Projections {
+
 	columns := make([]parquet.LeafColumn, 0, len(columnNames))
 	for _, columnName := range columnNames {
 		column, ok := selection.rowGroup.Schema().Lookup(columnName)
@@ -33,10 +34,10 @@ func Projection(selection SelectionResult, reader db.SectionLoader, columnNames 
 }
 
 func (p *Projections) ReadColumnRanges() ([][]parquet.Value, error) {
-	columns := make([][]parquet.Value, len(p.columns))
 	var (
 		wg      sync.WaitGroup
 		errChan = make(chan error, len(p.columns))
+		columns = make([][]parquet.Value, len(p.columns))
 	)
 	wg.Add(len(p.columns))
 	for i, column := range p.columns {

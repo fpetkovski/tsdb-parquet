@@ -8,6 +8,16 @@ import (
 
 var errSectionNotFound = errors.New("section not found")
 
+type SectionLoader interface {
+	LoadSection(from, to int64) error
+}
+
+type section struct {
+	from  int64
+	to    int64
+	bytes []byte
+}
+
 type sectionLoader struct {
 	fileSize int64
 	reader   io.ReaderAt

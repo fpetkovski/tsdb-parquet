@@ -7,9 +7,9 @@ import (
 )
 
 type RowIndexedPages interface {
+	io.Closer
 	ReadPage() (parquet.Page, int64, error)
 	OffsetRange() (int64, int64)
-	io.Closer
 }
 
 type pageSelection struct {
@@ -80,7 +80,10 @@ func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
 	}
 	p.currentRowIndex += pageRows.length()
 
-	return newPageSlice(page, 0, pageRows.length()), pageRows.from, nil
+	tail := page.Slice(0, pageRows.length())
+	parquet.Release(page)
+
+	return tail, pageRows.from, nil
 }
 
 func (p *selectedPages) OffsetRange() (int64, int64) {
@@ -89,23 +92,6 @@ func (p *selectedPages) OffsetRange() (int64, int64) {
 
 func (p *selectedPages) Close() error {
 	return p.pages.Close()
-}
-
-type pageSlice struct {
-	parquet.Page
-	original parquet.Page
-}
-
-func newPageSlice(page parquet.Page, from, to int64) pageSlice {
-	return pageSlice{
-		original: page,
-		Page:     page.Slice(from, to),
-	}
-}
-
-func (s pageSlice) Release() {
-	parquet.Release(s.original)
-	parquet.Release(s.Page)
 }
 
 func getPageSelection(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) pageSelection {

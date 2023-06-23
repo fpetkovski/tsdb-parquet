@@ -17,24 +17,12 @@ import (
 
 const ReadBufferSize = 4 * 1024
 
-type SectionLoader interface {
-	LoadSection(from, to int64) error
-}
-
-type section struct {
-	from  int64
-	to    int64
-	bytes []byte
-}
-
 type FileReader struct {
-	partName       string
-	file           *parquet.File
-	metadata       *metadata.FileMetaData
-	dataFileSize   int64
-	dataFileReader io.ReaderAt
+	size       int64
+	file       *parquet.File
+	dataReader io.ReaderAt
 
-	fsReader *sectionLoader
+	sectionLoader *sectionLoader
 }
 
 func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error) {
@@ -51,47 +39,41 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
-	fsReader := newFilesystemReader(dataReader, dataFileAtts.Size)
+	fsSectionLoader := newFilesystemReader(dataReader, dataFileAtts.Size)
 
 	fmt.Println("Loading bloom filter section")
-	if err := loadBloomFilters(fsReader, partMetadata); err != nil {
+	if err := loadBloomFilters(fsSectionLoader, partMetadata); err != nil {
 		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
 
 	fmt.Println("Loading dictionary sections")
-	if err := loadDictionaryPages(fsReader, partMetadata); err != nil {
+	if err := loadDictionaryPages(fsSectionLoader, partMetadata); err != nil {
 		return nil, errors.Wrap(err, "error reading column dictionaries")
 	}
 
 	reader := &FileReader{
-		partName:       partName,
-		metadata:       partMetadata,
-		dataFileSize:   dataFileAtts.Size,
-		dataFileReader: dataReader,
-		fsReader:       fsReader,
+		size:          dataFileAtts.Size,
+		dataReader:    dataReader,
+		sectionLoader: fsSectionLoader,
 	}
 
 	return reader, nil
 }
 
-func (r *FileReader) MetaData() *metadata.FileMetaData {
-	return r.metadata
-}
-
 func (r *FileReader) SectionLoader() SectionLoader {
-	return r.fsReader
+	return r.sectionLoader
 }
 
 func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
-	n, err = r.fsReader.ReadAt(p, off)
+	n, err = r.sectionLoader.ReadAt(p, off)
 	if err == errSectionNotFound {
-		return r.dataFileReader.ReadAt(p, off)
+		return r.dataReader.ReadAt(p, off)
 	}
 	return n, err
 }
 
 func (r *FileReader) FileSize() int64 {
-	return r.dataFileSize
+	return r.size
 }
 
 func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMetaData, error) {

@@ -1,14 +1,13 @@
 package prometheus
 
 import (
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
 	"fpetkovski/tsdb-parquet/dataset"
 )
 
 type seriesSet struct {
-	labels []labels.Labels
+
 }
 
 func newSeriesSet(scanner *dataset.Scanner) *seriesSet {
