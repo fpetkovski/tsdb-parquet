@@ -25,7 +25,7 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:8080", nil))
 	}()
-	
+
 	tsdbBlock, block, err := openBlock("data", os.Args[1])
 	if err != nil {
 		log.Fatal(err)

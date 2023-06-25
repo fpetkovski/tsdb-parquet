@@ -38,7 +38,7 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 
 	var numMatches int64
 	var selection RowSelection
-	values := make([]parquet.Value, 4 * 1024)
+	values := make([]parquet.Value, 4*1024)
 	for {
 		page, rowIndex, err := pages.ReadPage()
 		if err == io.EOF {

@@ -62,7 +62,7 @@ func TestProjectColumns(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tcase.expected[0], values)
 				projections.Release(values)
-				
+
 				tcase.expected = tcase.expected[1:]
 			}
 		})

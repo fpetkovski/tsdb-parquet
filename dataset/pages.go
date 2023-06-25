@@ -111,4 +111,3 @@ func (e emptyPageSelection) ReadPage() (parquet.Page, int64, error) { return nil
 func (e emptyPageSelection) SeekToRow(i int64) error     { return io.EOF }
 func (e emptyPageSelection) OffsetRange() (int64, int64) { return 0, 0 }
 func (e emptyPageSelection) Close() error                { return nil }
-

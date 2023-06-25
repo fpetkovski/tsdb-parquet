@@ -19,8 +19,8 @@ import (
 const (
 	MaxPageSize = 8 * 1024
 
-	writeBufferSize = 256 * 1024
-	dataFileSuffix  = ".parquet"
+	writeBufferSize    = 256 * 1024
+	dataFileSuffix     = ".parquet"
 	metadataFileSuffix = ".metadata"
 )
 

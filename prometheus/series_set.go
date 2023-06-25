@@ -7,7 +7,6 @@ import (
 )
 
 type seriesSet struct {
-
 }
 
 func newSeriesSet(scanner *dataset.Scanner) *seriesSet {
