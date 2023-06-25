@@ -1,10 +1,10 @@
 package dataset
 
 import (
-	"fmt"
 	"io"
 	"testing"
 
+	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,6 +13,9 @@ func TestProjectColumns(t *testing.T) {
 		name      string
 		rows      [][]testRow
 		selection []pickRange
+
+		project  []string
+		expected [][][]parquet.Value
 	}{
 		{
 			name: "single column projection",
@@ -27,7 +30,16 @@ func TestProjectColumns(t *testing.T) {
 				twoColumnRow("val2", "val7"),
 				twoColumnRow("val2", "val8"),
 			}},
+			project:   []string{"ColumnA", "ColumnB"},
 			selection: []pickRange{pick(2, 6)},
+
+			expected: [][][]parquet.Value{{
+				{pqVal("val1", 0), pqVal("val1", 0)},
+				{pqVal("val3", 1), pqVal("val4", 1)},
+			}, {
+				{pqVal("val2", 0), pqVal("val1", 0)},
+				{pqVal("val5", 1), pqVal("val6", 1)},
+			}},
 		},
 	}
 
@@ -40,7 +52,7 @@ func TestProjectColumns(t *testing.T) {
 				rowGroup: file.RowGroups()[0],
 				ranges:   tcase.selection,
 			}
-			projections := ProjectColumns(selection, &nopSectionLoader{}, 2, "ColumnB", "ColumnA")
+			projections := ProjectColumns(selection, &nopSectionLoader{}, 2, "ColumnA", "ColumnB")
 			defer projections.Close()
 			for {
 				values, err := projections.NextBatch()
@@ -48,13 +60,15 @@ func TestProjectColumns(t *testing.T) {
 					break
 				}
 				require.NoError(t, err)
-				for _, array := range values {
-					for _, value := range array {
-						fmt.Println(value)
-					}
-				}
+				require.Equal(t, tcase.expected[0], values)
 				projections.Release(values)
+				
+				tcase.expected = tcase.expected[1:]
 			}
 		})
 	}
+}
+
+func pqVal(val any, columnIndex int) parquet.Value {
+	return parquet.ValueOf(val).Level(0, 0, columnIndex)
 }

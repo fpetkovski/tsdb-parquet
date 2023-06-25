@@ -7,6 +7,7 @@ import (
 	"github.com/segmentio/parquet-go"
 
 	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/generic"
 )
 
 type Projections struct {
@@ -33,7 +34,7 @@ func ProjectColumns(selection SelectionResult, reader db.SectionLoader, batchSiz
 
 func (p Projections) NextBatch() ([][]parquet.Value, error) {
 	batch := make([][]parquet.Value, len(p.columns))
-	err := p.parallelEach(func(i int, column *columnProjection) error {
+	err := generic.ParallelEach(p.columns, func(i int, column *columnProjection) error {
 		var err error
 		batch[i], err = column.nextBatch()
 		return err
@@ -56,30 +57,6 @@ func (p Projections) Close() error {
 		}
 	}
 	return lastErr
-}
-
-func (p Projections) parallelEach(exec func(i int, column *columnProjection) error) error {
-	var (
-		wg      sync.WaitGroup
-		errChan = make(chan error, len(p.columns))
-	)
-	wg.Add(len(p.columns))
-	for i, projection := range p.columns {
-		go func(i int, projection *columnProjection) {
-			defer wg.Done()
-			if err := exec(i, projection); err != nil {
-				errChan <- err
-			}
-		}(i, projection)
-	}
-	wg.Wait()
-	close(errChan)
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type columnProjection struct {
