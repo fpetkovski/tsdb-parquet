@@ -18,7 +18,7 @@ func TestProjectColumns(t *testing.T) {
 		expected [][][]parquet.Value
 	}{
 		{
-			name: "single column projection",
+			name: "two column projection",
 			rows: [][]testRow{{
 				twoColumnRow("val1", "val1"),
 				twoColumnRow("val1", "val2"),
