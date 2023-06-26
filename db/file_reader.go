@@ -16,9 +16,21 @@ import (
 )
 
 const (
-	ReadBufferSize = 4 * 1024
-	sectionCacheDir = "./cache"
+	ReadBufferSize         = 4 * 1024
+	defaultSectionCacheDir = "./cache"
 )
+
+type fileReaderOpts struct {
+	sectionCacheDir string
+}
+
+type FileReaderOpt func(*fileReaderOpts)
+
+func WithSectionCacheDir(dir string) FileReaderOpt {
+	return func(opts *fileReaderOpts) {
+		opts.sectionCacheDir = dir
+	}
+}
 
 type FileReader struct {
 	size       int64
@@ -28,7 +40,8 @@ type FileReader struct {
 	sectionLoader *sectionLoader
 }
 
-func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error) {
+func OpenFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
+
 	partMetadata, err := readMetadata(partName+metadataFileSuffix, bucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading file metadata")
@@ -42,7 +55,8 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
-	fsSectionLoader, err := newFilesystemLoader(dataReader, dataFileAtts.Size, sectionCacheDir)
+	readerOpts := applyOpts(opts)
+	fsSectionLoader, err := newFilesystemLoader(dataReader, dataFileAtts.Size, readerOpts.sectionCacheDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating section reader")
 	}
@@ -64,6 +78,16 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 	}
 
 	return reader, nil
+}
+
+func applyOpts(opts []FileReaderOpt) fileReaderOpts {
+	readerOpts := fileReaderOpts{
+		sectionCacheDir: defaultSectionCacheDir,
+	}
+	for _, opt := range opts {
+		opt(&readerOpts)
+	}
+	return readerOpts
 }
 
 func (r *FileReader) SectionLoader() SectionLoader {
@@ -152,4 +176,3 @@ func loadBloomFilters(loader SectionLoader, metadata *metadata.FileMetaData) err
 	_, err := loader.LoadSection(from, to)
 	return err
 }
-

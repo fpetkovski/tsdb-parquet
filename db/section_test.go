@@ -27,8 +27,10 @@ func TestSectionLoading(t *testing.T) {
 	require.NoError(t, err)
 	inspector := &bucketInspector{Bucket: bucket}
 
-	reader, err := OpenFileReader("part.0", inspector)
+	cacheDir := t.TempDir()
+	reader, err := OpenFileReader("part.0", inspector, WithSectionCacheDir(cacheDir))
 	require.NoError(t, err)
+	assertNumSections(t, cacheDir, 1)
 	require.Equal(t, 1, inspector.getRangeRequests)
 
 	loader := reader.SectionLoader()
@@ -40,19 +42,27 @@ func TestSectionLoading(t *testing.T) {
 		_, err = reader.ReadAt(buf, 0)
 		require.NoError(t, err)
 	}
+	assertNumSections(t, cacheDir, 2)
 	require.Equal(t, 2, inspector.getRangeRequests)
+
 	require.NoError(t, closer.Close())
+	assertNumSections(t, cacheDir, 1)
+
+	require.NoError(t, reader.Close())
+	assertNumSections(t, cacheDir, 0)
+}
+
+func assertNumSections(t *testing.T, cacheDir string, expectedSections int) {
+	sections, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	require.Len(t, sections, expectedSections)
 }
 
 func createFile(t *testing.T, series []labels.Labels) string {
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll("./cache"))
-	})
-	require.NoError(t, os.Mkdir("./cache", 0777))
-	dir := t.TempDir()
-
 	lbls := []string{"a", "b"}
 	chunkSchema := schema.MakeChunkSchema(lbls)
+
+	dir := t.TempDir()
 	writer := NewWriter(dir, lbls, chunkSchema)
 
 	for _, s := range series {
