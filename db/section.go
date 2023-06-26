@@ -28,24 +28,24 @@ func newDiskSection(from, to int64, dir string) (section, error) {
 	return section{
 		from:  from,
 		to:    to,
-		bytes: diskReader{path: filePath, f: f},
+		bytes: fileBytes{path: filePath, f: f},
 	}, nil
 }
 
-type diskReader struct {
+type fileBytes struct {
 	path string
 	f    *os.File
 }
 
-func (d diskReader) ReadAt(p []byte, off int64) (int, error) {
+func (d fileBytes) ReadAt(p []byte, off int64) (int, error) {
 	return d.f.ReadAt(p, off)
 }
 
-func (d diskReader) Write(p []byte) (n int, err error) {
+func (d fileBytes) Write(p []byte) (n int, err error) {
 	return d.f.Write(p)
 }
 
-func (d diskReader) Close() error {
+func (d fileBytes) Close() error {
 	if err := d.f.Close(); err != nil {
 		return err
 	}
