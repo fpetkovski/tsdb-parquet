@@ -19,12 +19,6 @@ type SectionLoader interface {
 	LoadSection(from, to int64) (io.Closer, error)
 }
 
-type section struct {
-	from  int64
-	to    int64
-	bytes []byte
-}
-
 type readerAtCloser interface {
 	io.ReaderAt
 	io.Closer
