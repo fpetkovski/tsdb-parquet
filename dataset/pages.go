@@ -24,10 +24,6 @@ type selectedPages struct {
 	pages           parquet.Pages
 }
 
-func (p *selectedPages) RowIndex() int64 {
-	return p.currentRowIndex
-}
-
 func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexedPages {
 	ranges := selection.ranges
 	if len(ranges) == 0 {
@@ -89,6 +85,10 @@ func (p *selectedPages) ReadPage() (parquet.Page, error) {
 	return tail, nil
 }
 
+func (p *selectedPages) RowIndex() int64 {
+	return p.currentRowIndex
+}
+
 func (p *selectedPages) OffsetRange() (int64, int64) {
 	return p.selected[0].pageOffset, p.selected[len(p.selected)-1].pageOffset
 }
@@ -114,8 +114,7 @@ func getCurrentPage(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) 
 type emptyPageSelection struct{}
 
 func (e emptyPageSelection) ReadPage() (parquet.Page, error) { return nil, io.EOF }
-
-func (e emptyPageSelection) SeekToRow(_ int64) error     { return io.EOF }
-func (e emptyPageSelection) RowIndex() int64             { return 0 }
-func (e emptyPageSelection) OffsetRange() (int64, int64) { return 0, 0 }
-func (e emptyPageSelection) Close() error                { return nil }
+func (e emptyPageSelection) SeekToRow(_ int64) error         { return io.EOF }
+func (e emptyPageSelection) RowIndex() int64                 { return 0 }
+func (e emptyPageSelection) OffsetRange() (int64, int64)     { return 0, 0 }
+func (e emptyPageSelection) Close() error                    { return nil }
