@@ -68,6 +68,8 @@ type columnProjection struct {
 	batchSize     int64
 	currentPage   parquet.Page
 	currentReader parquet.ValueReader
+
+	sectionCloser io.Closer
 }
 
 func newColumnProjection(
@@ -130,7 +132,7 @@ func (p *columnProjection) loadColumnData() error {
 	var err error
 	p.once.Do(func() {
 		offsetFrom, offsetTo := p.pages.OffsetRange()
-		err = p.loader.LoadSection(offsetFrom, offsetTo)
+		p.sectionCloser, err = p.loader.LoadSection(offsetFrom, offsetTo)
 	})
 	return err
 }
@@ -139,5 +141,6 @@ func (p *columnProjection) Close() error {
 	if p.currentPage != nil {
 		parquet.Release(p.currentPage)
 	}
+	p.sectionCloser.Close()
 	return p.pages.Close()
 }

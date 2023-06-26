@@ -112,7 +112,6 @@ func printColumns(columns [][]parquet.Value, writer io.Writer) {
 	if len(columns) == 0 {
 		return
 	}
-
 	for i := 0; i < len(columns[0]); i++ {
 		for _, c := range columns {
 			_, _ = fmt.Fprintf(writer, "%s", c[i])

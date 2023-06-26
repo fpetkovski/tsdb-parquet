@@ -15,7 +15,10 @@ import (
 	"fpetkovski/tsdb-parquet/storage"
 )
 
-const ReadBufferSize = 4 * 1024
+const (
+	ReadBufferSize = 4 * 1024
+	sectionCacheDir = "./cache"
+)
 
 type FileReader struct {
 	size       int64
@@ -39,7 +42,10 @@ func OpenFileReader(partName string, bucket objstore.Bucket) (*FileReader, error
 		return nil, errors.Wrap(err, "error reading file attributes")
 	}
 
-	fsSectionLoader := newFilesystemReader(dataReader, dataFileAtts.Size)
+	fsSectionLoader, err := newFilesystemLoader(dataReader, dataFileAtts.Size, sectionCacheDir)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating section reader")
+	}
 
 	fmt.Println("Loading bloom filter section")
 	if err := loadBloomFilters(fsSectionLoader, partMetadata); err != nil {
@@ -107,7 +113,8 @@ func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) 
 				continue
 			}
 			errGroup.Go(func() error {
-				return loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
+				_, err := loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
+				return err
 			})
 		}
 	}
@@ -138,23 +145,7 @@ func loadBloomFilters(loader SectionLoader, metadata *metadata.FileMetaData) err
 	from := bloomFilterOffsets[0]
 	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024
 
-	return loader.LoadSection(from, to)
+	_, err := loader.LoadSection(from, to)
+	return err
 }
 
-func readSection(reader io.ReaderAt, from int64, to int64, fileSize int64) (section, error) {
-	to += ReadBufferSize
-	if to > fileSize {
-		to = fileSize
-	}
-	buffer := make([]byte, to-from)
-	_, err := reader.ReadAt(buffer, from)
-	if err != nil {
-		return section{}, err
-	}
-
-	return section{
-		from:  from,
-		to:    to,
-		bytes: buffer,
-	}, nil
-}

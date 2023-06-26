@@ -32,9 +32,11 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()
-	if err := r.reader.LoadSection(offsetFrom, offsetTo); err != nil {
+	sectionCloser, err := r.reader.LoadSection(offsetFrom, offsetTo)
+	if err != nil {
 		return nil, err
 	}
+	defer sectionCloser.Close()
 
 	var numMatches int64
 	var selection RowSelection
@@ -85,9 +87,11 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.OffsetRange()
-	if err := r.reader.LoadSection(offsetFrom, offsetTo); err != nil {
+	sectionCloser, err := r.reader.LoadSection(offsetFrom, offsetTo)
+	if err != nil {
 		return nil, err
 	}
+	defer sectionCloser.Close()
 
 	var dictionaryValue int32 = -1
 	var once sync.Once
