@@ -42,6 +42,29 @@ func TestProjectColumns(t *testing.T) {
 			}},
 		},
 		{
+			name: "disjoint selection within single page",
+			rows: [][]testRow{{
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val2"),
+				twoColumnRow("val1", "val3"),
+				twoColumnRow("val1", "val4"),
+			}, {
+				twoColumnRow("val2", "val5"),
+				twoColumnRow("val1", "val6"),
+				twoColumnRow("val2", "val7"),
+				twoColumnRow("val2", "val8"),
+			}},
+			columns:   []string{"ColumnB"},
+			chunkSize: 3,
+			selection: []pickRange{pick(1, 2), pick(3, 4), pick(4, 5), pick(6, 7)},
+
+			expected: [][][]parquet.Value{{
+				{pqVal("val2", 1), pqVal("val4", 1), pqVal("val5", 1)},
+			}, {
+				{pqVal("val7", 1)},
+			}},
+		},
+		{
 			name: "disjoint selection",
 			rows: [][]testRow{{
 				twoColumnRow("val1", "val1"),

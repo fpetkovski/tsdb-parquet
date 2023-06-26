@@ -40,7 +40,7 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 	var selection RowSelection
 	values := make([]parquet.Value, 4*1024)
 	for {
-		page, rowIndex, err := pages.ReadPage()
+		page, err := pages.ReadPage()
 		if err == io.EOF {
 			break
 		}
@@ -52,7 +52,7 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 			return nil, err
 		}
 
-		skipFrom, skipTo := rowIndex, rowIndex
+		skipFrom, skipTo := pages.RowIndex(), pages.RowIndex()
 		for i := 0; i < n; i++ {
 			skipTo++
 			matches := r.matches(values[i])
@@ -94,7 +94,7 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 	var numMatches int64
 	var selection RowSelection
 	for {
-		page, firstRow, err := pages.ReadPage()
+		page, err := pages.ReadPage()
 		if err == io.EOF {
 			break
 		}
@@ -107,13 +107,13 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 			dictionaryValue = getDictionaryEncodedValue(page, r.matches)
 		})
 		if dictionaryValue == -1 {
-			selection = selection.Skip(firstRow, page.NumRows())
+			selection = selection.Skip(pages.RowIndex(), page.NumRows())
 			parquet.Release(page)
 			break
 		}
 
 		encodedValues := data.Int32()
-		skipFrom, skipTo := firstRow, firstRow
+		skipFrom, skipTo := pages.RowIndex(), pages.RowIndex()
 		for _, val := range encodedValues {
 			skipTo++
 			if val == dictionaryValue {

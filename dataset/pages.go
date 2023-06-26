@@ -8,8 +8,9 @@ import (
 
 type RowIndexedPages interface {
 	io.Closer
-	ReadPage() (parquet.Page, int64, error)
+	parquet.PageReader
 	OffsetRange() (int64, int64)
+	RowIndex() int64
 }
 
 type pageSelection struct {
@@ -21,6 +22,10 @@ type selectedPages struct {
 	currentRowIndex int64
 	selected        []pageSelection
 	pages           parquet.Pages
+}
+
+func (p *selectedPages) RowIndex() int64 {
+	return p.currentRowIndex
 }
 
 func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexedPages {
@@ -37,8 +42,10 @@ func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexe
 		currentPage := getCurrentPage(iPages, chunk.OffsetIndex(), chunk.NumValues())
 		currentRange := ranges[iRange]
 		if currentRange.overlaps(currentPage.rowRange) {
-			currentPage.rowRange = currentPage.rowRange.intersect(currentRange.rowRange)
-			selected = append(selected, currentPage)
+			selected = append(selected, pageSelection{
+				pageOffset: currentPage.pageOffset,
+				rowRange:   currentPage.rowRange.intersect(currentRange.rowRange),
+			})
 		}
 
 		if ranges[iRange].before(currentPage.rowRange) {
@@ -57,29 +64,29 @@ func SelectPages(chunk parquet.ColumnChunk, selection SelectionResult) RowIndexe
 	}
 }
 
-func (p *selectedPages) ReadPage() (parquet.Page, int64, error) {
+func (p *selectedPages) ReadPage() (parquet.Page, error) {
 	if len(p.selected) == 0 {
-		return nil, 0, io.EOF
+		return nil, io.EOF
 	}
 	var pageRows rowRange
 	pageRows, p.selected = p.selected[0].rowRange, p.selected[1:]
 	if pageRows.from > p.currentRowIndex {
 		err := p.pages.SeekToRow(pageRows.from)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 	}
 
 	page, err := p.pages.ReadPage()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	p.currentRowIndex += pageRows.length()
+	p.currentRowIndex = pageRows.from
 
 	tail := page.Slice(0, pageRows.length())
 	parquet.Release(page)
 
-	return tail, pageRows.from, nil
+	return tail, nil
 }
 
 func (p *selectedPages) OffsetRange() (int64, int64) {
@@ -106,8 +113,9 @@ func getCurrentPage(iPages int, offsetIndex parquet.OffsetIndex, numRows int64) 
 
 type emptyPageSelection struct{}
 
-func (e emptyPageSelection) ReadPage() (parquet.Page, int64, error) { return nil, 0, io.EOF }
+func (e emptyPageSelection) ReadPage() (parquet.Page, error) { return nil, io.EOF }
 
-func (e emptyPageSelection) SeekToRow(i int64) error     { return io.EOF }
+func (e emptyPageSelection) SeekToRow(_ int64) error     { return io.EOF }
+func (e emptyPageSelection) RowIndex() int64             { return 0 }
 func (e emptyPageSelection) OffsetRange() (int64, int64) { return 0, 0 }
 func (e emptyPageSelection) Close() error                { return nil }

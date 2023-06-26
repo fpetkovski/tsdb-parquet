@@ -107,7 +107,7 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 		// If the current page is exhausted, move over to the next page.
 		if readValsErr == io.EOF {
 			parquet.Release(p.currentPage)
-			p.currentPage, _, err = p.pages.ReadPage()
+			p.currentPage, err = p.pages.ReadPage()
 			if err != nil {
 				break
 			}

@@ -74,6 +74,23 @@ func TestScan(t *testing.T) {
 		},
 		{
 			//
+			//	pages:      |_____|
+			//	selection:  |_| |_|
+			name: "multiple selections within a single page",
+			parts: [][]testRow{{
+				twoColumnRow("val1", "val1"),
+				twoColumnRow("val1", "val2"),
+				twoColumnRow("val2", "val1"),
+			}},
+			predicates: []ScannerOption{
+				Equals("ColumnB", "val1"),
+			},
+			expected: SelectionResult{
+				ranges: []pickRange{pick(0, 1), pick(2, 3)},
+			},
+		},
+		{
+			//
 			//	pages:      |_____||_____|
 			//	selection:      |___|
 			name: "multi row selection",
