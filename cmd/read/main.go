@@ -65,6 +65,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	defer reader.Close()
 
 	fmt.Println("Opening parquet file")
 	pqFile, err := parquet.OpenFile(reader, reader.FileSize(), parquet.ReadBufferSize(db.ReadBufferSize))

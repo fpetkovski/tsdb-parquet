@@ -82,6 +82,10 @@ func (r *FileReader) FileSize() int64 {
 	return r.size
 }
 
+func (r *FileReader) Close() error {
+	return r.sectionLoader.Close()
+}
+
 func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMetaData, error) {
 	metaFileAttrs, err := bucket.Attributes(context.Background(), metadataFile)
 	if err != nil {

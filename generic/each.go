@@ -9,7 +9,7 @@ func ParallelEach[T any](items []T, exec func(i int, item T) error) error {
 	)
 	wg.Add(len(items))
 	for i, projection := range items {
-		go func(i int, projection T) {
+		func(i int, projection T) {
 			defer wg.Done()
 			if err := exec(i, projection); err != nil {
 				errChan <- err
