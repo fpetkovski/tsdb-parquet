@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"io"
@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"fpetkovski/tsdb-parquet/dataset"
 )
 
-func BenchmarkProjection(b *testing.B) {
+func BenchmarkDistinct(b *testing.B) {
 	b.StopTimer()
 
 	numRows := 1_000_000
@@ -37,14 +39,16 @@ func BenchmarkProjection(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		selection := SelectRows(file.RowGroups()[0], SelectAll())
+		selection := dataset.SelectRows(file.RowGroups()[0], dataset.SelectAll())
 		projection := ProjectColumns(selection, &nopSectionLoader{}, batchSize, cols...)
-		defer projection.Close()
+		distinct := DistinctByColumn(0, projection)
+		defer distinct.Close()
+
 		b.StartTimer()
 
 		var numRead int
 		for {
-			batch, err := projection.NextBatch()
+			batch, err := distinct.NextBatch()
 			if err == io.EOF {
 				break
 			}
@@ -56,8 +60,8 @@ func BenchmarkProjection(b *testing.B) {
 
 			require.Len(b, batch, len(cols))
 			require.LessOrEqual(b, int64(len(batch[0])), batchSize)
-			projection.Release(batch)
+			distinct.Release(batch)
 		}
-		require.EqualValues(b, numRows, numRead)
+		require.EqualValues(b, 4, numRead)
 	}
 }

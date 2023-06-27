@@ -1,10 +1,11 @@
-package dataset
+package compute
 
 import (
 	"sort"
 
 	"github.com/segmentio/parquet-go"
 
+	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
 )
 
@@ -12,7 +13,7 @@ type Scanner struct {
 	reader db.SectionLoader
 	file   *parquet.File
 
-	predicates Predicates
+	predicates dataset.Predicates
 }
 
 type ScannerOption func(*Scanner)
@@ -23,7 +24,7 @@ func Equals(column string, value string) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newEqualsMatcher(scanner.reader, col, value))
+		scanner.predicates = append(scanner.predicates, dataset.NewEqualsPredicate(scanner.reader, col, value))
 	}
 }
 
@@ -33,7 +34,7 @@ func GreaterThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newGTEMatcher(scanner.reader, col, value))
+		scanner.predicates = append(scanner.predicates, dataset.NewGTEPredicate(scanner.reader, col, value))
 	}
 }
 
@@ -43,7 +44,7 @@ func LessThanOrEqual(column string, value parquet.Value) ScannerOption {
 		if !ok {
 			return
 		}
-		scanner.predicates = append(scanner.predicates, newLTEMatcher(scanner.reader, col, value))
+		scanner.predicates = append(scanner.predicates, dataset.NewLTEPredicate(scanner.reader, col, value))
 	}
 }
 
@@ -51,7 +52,7 @@ func NewScanner(file *parquet.File, reader db.SectionLoader, options ...ScannerO
 	scanner := &Scanner{
 		file:       file,
 		reader:     reader,
-		predicates: make(Predicates, 0),
+		predicates: make(dataset.Predicates, 0),
 	}
 	for _, option := range options {
 		option(scanner)
@@ -60,8 +61,8 @@ func NewScanner(file *parquet.File, reader db.SectionLoader, options ...ScannerO
 	return scanner
 }
 
-func (s *Scanner) Select() ([]SelectionResult, error) {
-	result := make([]SelectionResult, 0, len(s.file.RowGroups()))
+func (s *Scanner) Select() ([]dataset.SelectionResult, error) {
+	result := make([]dataset.SelectionResult, 0, len(s.file.RowGroups()))
 	for _, rowGroup := range s.file.RowGroups() {
 		rowSelections := s.predicates.SelectRows(rowGroup)
 		filteredRows, err := s.predicates.FilterRows(rowGroup, rowSelections)
@@ -69,7 +70,7 @@ func (s *Scanner) Select() ([]SelectionResult, error) {
 			return nil, err
 		}
 
-		rowGroupRows := SelectRows(rowGroup, filteredRows)
+		rowGroupRows := dataset.SelectRows(rowGroup, filteredRows)
 		result = append(result, rowGroupRows)
 	}
 

@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"io"
@@ -6,7 +6,7 @@ import (
 	"github.com/segmentio/parquet-go"
 )
 
-type ExecFragment interface {
+type Fragment interface {
 	io.Closer
 	NextBatch() ([][]parquet.Value, error)
 	Release([][]parquet.Value)

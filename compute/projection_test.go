@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"io"
@@ -6,13 +6,15 @@ import (
 
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
+
+	"fpetkovski/tsdb-parquet/dataset"
 )
 
 func TestProjectColumns(t *testing.T) {
 	cases := []struct {
 		name      string
 		rows      [][]testRow
-		selection []pickRange
+		selection []dataset.PickRange
 
 		columns   []string
 		chunkSize int64
@@ -33,7 +35,7 @@ func TestProjectColumns(t *testing.T) {
 			}},
 			columns:   []string{"ColumnB"},
 			chunkSize: 3,
-			selection: []pickRange{pick(2, 6)},
+			selection: []dataset.PickRange{dataset.Pick(2, 6)},
 
 			expected: [][][]parquet.Value{{
 				{pqVal("val3", 1), pqVal("val4", 1), pqVal("val5", 1)},
@@ -56,7 +58,7 @@ func TestProjectColumns(t *testing.T) {
 			}},
 			columns:   []string{"ColumnB"},
 			chunkSize: 3,
-			selection: []pickRange{pick(1, 2), pick(3, 4), pick(4, 5), pick(6, 7)},
+			selection: []dataset.PickRange{dataset.Pick(1, 2), dataset.Pick(3, 4), dataset.Pick(4, 5), dataset.Pick(6, 7)},
 
 			expected: [][][]parquet.Value{{
 				{pqVal("val2", 1), pqVal("val4", 1), pqVal("val5", 1)},
@@ -80,7 +82,7 @@ func TestProjectColumns(t *testing.T) {
 			}},
 			columns:   []string{"ColumnB"},
 			chunkSize: 3,
-			selection: []pickRange{pick(0, 2), pick(3, 5), pick(6, 9)},
+			selection: []dataset.PickRange{dataset.Pick(0, 2), dataset.Pick(3, 5), dataset.Pick(6, 9)},
 
 			expected: [][][]parquet.Value{{
 				{pqVal("val1", 1), pqVal("val2", 1), pqVal("val4", 1)},
@@ -105,7 +107,7 @@ func TestProjectColumns(t *testing.T) {
 			}},
 			columns:   []string{"ColumnA", "ColumnB"},
 			chunkSize: 2,
-			selection: []pickRange{pick(2, 6)},
+			selection: []dataset.PickRange{dataset.Pick(2, 6)},
 
 			expected: [][][]parquet.Value{{
 				{pqVal("val1", 0), pqVal("val1", 0)},
@@ -122,10 +124,9 @@ func TestProjectColumns(t *testing.T) {
 			file, err := createFile(tcase.rows)
 			require.NoError(t, err)
 
-			selection := SelectionResult{
-				rowGroup: file.RowGroups()[0],
-				ranges:   tcase.selection,
-			}
+			selection := dataset.NewSelectionResult(
+				file.RowGroups()[0], tcase.selection,
+			)
 			projections := ProjectColumns(selection, &nopSectionLoader{}, tcase.chunkSize, tcase.columns...)
 			defer projections.Close()
 			for {

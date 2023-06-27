@@ -59,7 +59,7 @@ func (p columnPredicate) FilterRows(rowGroup parquet.RowGroup, selection RowSele
 	return p.filter.FilterRows(chunk, SelectRows(rowGroup, selection))
 }
 
-func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value string) columnPredicate {
+func NewEqualsPredicate(reader db.SectionLoader, column parquet.LeafColumn, value string) columnPredicate {
 	pqValue := parquet.ByteArrayValue([]byte(value))
 	compare := column.Node.Type().Compare
 
@@ -78,7 +78,7 @@ func newEqualsMatcher(reader db.SectionLoader, column parquet.LeafColumn, value 
 	}
 }
 
-func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold parquet.Value) columnPredicate {
+func NewGTEPredicate(reader db.SectionLoader, column parquet.LeafColumn, threshold parquet.Value) columnPredicate {
 	compare := column.Node.Type().Compare
 	return columnPredicate{
 		column: column,
@@ -95,7 +95,7 @@ func newGTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, threshold
 	}
 }
 
-func newLTEMatcher(reader db.SectionLoader, column parquet.LeafColumn, value parquet.Value) columnPredicate {
+func NewLTEPredicate(reader db.SectionLoader, column parquet.LeafColumn, value parquet.Value) columnPredicate {
 	compare := column.Node.Type().Compare
 	return columnPredicate{
 		column: column,

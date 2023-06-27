@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/dataset"
+	"fpetkovski/tsdb-parquet/compute"
 	"fpetkovski/tsdb-parquet/db"
 	"fpetkovski/tsdb-parquet/schema"
 )
@@ -37,21 +37,21 @@ type querier struct {
 }
 
 func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	opts := []dataset.ScannerOption{
-		dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
-		dataset.LessThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
+	opts := []compute.ScannerOption{
+		compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
+		compute.LessThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
 	}
 	for _, m := range matchers {
-		opts = append(opts, dataset.Equals(m.Name, m.Value))
+		opts = append(opts, compute.Equals(m.Name, m.Value))
 	}
 
-	scanner := dataset.NewScanner(q.file, q.sectionLoader, opts...)
+	scanner := compute.NewScanner(q.file, q.sectionLoader, opts...)
 	selection, err := scanner.Select()
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 	projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
-	plan := dataset.DistinctByColumn(0, dataset.ProjectColumns(
+	plan := compute.DistinctByColumn(0, compute.ProjectColumns(
 		selection[0],
 		q.sectionLoader,
 		seriesBatchSize,

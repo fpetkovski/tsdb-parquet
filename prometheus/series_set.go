@@ -3,14 +3,14 @@ package prometheus
 import (
 	"github.com/prometheus/prometheus/storage"
 
-	"fpetkovski/tsdb-parquet/dataset"
+	"fpetkovski/tsdb-parquet/compute"
 )
 
 type seriesSet struct {
-	plan dataset.ExecFragment
+	plan compute.Fragment
 }
 
-func newSeriesSet(scanner *dataset.Scanner) *seriesSet {
+func newSeriesSet(scanner *compute.Scanner) *seriesSet {
 	return &seriesSet{}
 }
 

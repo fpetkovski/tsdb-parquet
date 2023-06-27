@@ -4,7 +4,15 @@ import "github.com/segmentio/parquet-go"
 
 type SelectionResult struct {
 	rowGroup parquet.RowGroup
-	ranges   []pickRange
+	ranges   []PickRange
+}
+
+func NewSelectionResult(rowGroup parquet.RowGroup, ranges []PickRange) SelectionResult {
+	return SelectionResult{rowGroup: rowGroup, ranges: ranges}
+}
+
+func (s SelectionResult) RowGroup() parquet.RowGroup {
+	return s.rowGroup
 }
 
 func (s SelectionResult) NumRows() int64 {

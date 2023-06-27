@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"io"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/segmentio/parquet-go"
 
+	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
 	"fpetkovski/tsdb-parquet/generic"
 )
@@ -16,11 +17,11 @@ type Projections struct {
 	batchSize int64
 }
 
-func ProjectColumns(selection SelectionResult, reader db.SectionLoader, batchSize int64, columnNames ...string) Projections {
+func ProjectColumns(selection dataset.SelectionResult, reader db.SectionLoader, batchSize int64, columnNames ...string) Projections {
 	pool := newValuesPool(int(batchSize))
 	projections := make([]*columnProjection, 0, len(columnNames))
 	for _, columnName := range columnNames {
-		column, ok := selection.rowGroup.Schema().Lookup(columnName)
+		column, ok := selection.RowGroup().Schema().Lookup(columnName)
 		if !ok {
 			continue
 		}
@@ -68,7 +69,7 @@ func (p Projections) Close() error {
 type columnProjection struct {
 	once   sync.Once
 	pool   *valuesPool
-	pages  RowIndexedPages
+	pages  dataset.RowIndexedPages
 	loader db.SectionLoader
 
 	batchSize     int64
@@ -80,13 +81,13 @@ type columnProjection struct {
 
 func newColumnProjection(
 	column parquet.LeafColumn,
-	selection SelectionResult,
+	selection dataset.SelectionResult,
 	loader db.SectionLoader,
 	batchSize int64,
 	pool *valuesPool,
 ) *columnProjection {
-	chunk := selection.rowGroup.ColumnChunks()[column.ColumnIndex]
-	pages := SelectPages(chunk, selection)
+	chunk := selection.RowGroup().ColumnChunks()[column.ColumnIndex]
+	pages := dataset.SelectPages(chunk, selection)
 
 	return &columnProjection{
 		batchSize: batchSize,

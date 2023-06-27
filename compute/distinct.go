@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"github.com/segmentio/parquet-go"

@@ -73,7 +73,7 @@ func SelectRows(rowGroup parquet.RowGroup, skips ...RowSelection) SelectionResul
 	if len(skips) == 0 {
 		return SelectionResult{
 			rowGroup: rowGroup,
-			ranges:   []pickRange{pick(0, rowGroup.NumRows())},
+			ranges:   []PickRange{Pick(0, rowGroup.NumRows())},
 		}
 	}
 
@@ -84,7 +84,7 @@ func SelectRows(rowGroup parquet.RowGroup, skips ...RowSelection) SelectionResul
 	if len(allRanges) == 0 {
 		return SelectionResult{
 			rowGroup: rowGroup,
-			ranges:   []pickRange{pick(0, rowGroup.NumRows())},
+			ranges:   []PickRange{Pick(0, rowGroup.NumRows())},
 		}
 	}
 	slices.SortFunc(allRanges, func(a, b skipRange) bool {
@@ -95,25 +95,25 @@ func SelectRows(rowGroup parquet.RowGroup, skips ...RowSelection) SelectionResul
 	return pickRanges(rowGroup, merged)
 }
 
-type pickRange struct {
+type PickRange struct {
 	rowRange
 }
 
-func (p pickRange) split(batchSize int64) []pickRange {
+func (p PickRange) split(batchSize int64) []PickRange {
 	if p.length() <= batchSize {
-		return []pickRange{p}
+		return []PickRange{p}
 	}
 
-	ranges := make([]pickRange, 0, p.length()/batchSize+1)
+	ranges := make([]PickRange, 0, p.length()/batchSize+1)
 	for from := p.from; from < p.to; from += batchSize {
 		to := minInt64(from+batchSize, p.to)
-		ranges = append(ranges, pick(from, to))
+		ranges = append(ranges, Pick(from, to))
 	}
 	return ranges
 }
 
-func pick(from, to int64) pickRange {
-	return pickRange{rowRange{from: from, to: to}}
+func Pick(from, to int64) PickRange {
+	return PickRange{rowRange{from: from, to: to}}
 }
 
 func mergeOverlappingRanges(allRanges []skipRange) RowSelection {
@@ -129,16 +129,16 @@ func mergeOverlappingRanges(allRanges []skipRange) RowSelection {
 }
 
 func pickRanges(rowGroup parquet.RowGroup, skips RowSelection) SelectionResult {
-	ranges := make([]pickRange, 0, len(skips))
+	ranges := make([]PickRange, 0, len(skips))
 	fromRow := int64(0)
 	for _, s := range skips {
 		if s.from > fromRow {
-			ranges = append(ranges, pick(fromRow, s.from))
+			ranges = append(ranges, Pick(fromRow, s.from))
 		}
 		fromRow = s.to
 	}
 	if fromRow < rowGroup.NumRows() {
-		ranges = append(ranges, pick(fromRow, rowGroup.NumRows()))
+		ranges = append(ranges, Pick(fromRow, rowGroup.NumRows()))
 	}
 	return SelectionResult{
 		rowGroup: rowGroup,

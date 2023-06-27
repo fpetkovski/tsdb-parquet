@@ -1,4 +1,4 @@
-package dataset
+package compute
 
 import (
 	"bytes"
@@ -7,6 +7,8 @@ import (
 
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
+
+	"fpetkovski/tsdb-parquet/dataset"
 )
 
 var columns = []string{"ColumnA", "ColumnB", "ColumnC", "ColumnD"}
@@ -24,10 +26,10 @@ func twoColumnRow(columnA string, columnB string) testRow {
 
 func TestScan(t *testing.T) {
 	cases := []struct {
-		name       string
-		parts      [][]testRow
-		predicates []ScannerOption
-		expected   SelectionResult
+		name           string
+		parts          [][]testRow
+		predicates     []ScannerOption
+		expectedRanges []dataset.PickRange
 	}{
 		{
 			//
@@ -42,9 +44,7 @@ func TestScan(t *testing.T) {
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(1, 2)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(1, 2)},
 		},
 		{
 			//
@@ -69,9 +69,7 @@ func TestScan(t *testing.T) {
 				Equals("ColumnB", "val5"),
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val1"))),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(4, 5)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(4, 5)},
 		},
 		{
 			//
@@ -86,9 +84,7 @@ func TestScan(t *testing.T) {
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val1"),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(0, 1), pick(2, 3)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(0, 1), dataset.Pick(2, 3)},
 		},
 		{
 			//
@@ -109,9 +105,7 @@ func TestScan(t *testing.T) {
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val2"))),
 				Equals("ColumnB", "val2"),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(3, 6)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(3, 6)},
 		},
 		{
 			//
@@ -134,9 +128,7 @@ func TestScan(t *testing.T) {
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(1, 3), pick(5, 7), pick(8, 9)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(1, 3), dataset.Pick(5, 7), dataset.Pick(8, 9)},
 		},
 		{
 			//
@@ -164,9 +156,7 @@ func TestScan(t *testing.T) {
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
 			},
-			expected: SelectionResult{
-				ranges: []pickRange{pick(3, 6), pick(8, 10), pick(11, 12)},
-			},
+			expectedRanges: []dataset.PickRange{dataset.Pick(3, 6), dataset.Pick(8, 10), dataset.Pick(11, 12)},
 		},
 	}
 
@@ -179,9 +169,11 @@ func TestScan(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, rowGroup := range pqFile.RowGroups() {
-				tcase.expected.rowGroup = rowGroup
+				expected := dataset.NewSelectionResult(
+					rowGroup, tcase.expectedRanges,
+				)
+				require.Equal(t, expected, rowRanges[0])
 			}
-			require.Equal(t, tcase.expected, rowRanges[0])
 		})
 	}
 }

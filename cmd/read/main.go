@@ -15,7 +15,7 @@ import (
 	"github.com/thanos-io/objstore/providers/gcs"
 	"gopkg.in/yaml.v3"
 
-	"fpetkovski/tsdb-parquet/dataset"
+	"fpetkovski/tsdb-parquet/compute"
 	"fpetkovski/tsdb-parquet/db"
 	"fpetkovski/tsdb-parquet/schema"
 	"fpetkovski/tsdb-parquet/storage"
@@ -78,10 +78,10 @@ func main() {
 
 	fmt.Println("Scanning...")
 	scanStart := time.Now()
-	scanner := dataset.NewScanner(pqFile, reader.SectionLoader(),
+	scanner := compute.NewScanner(pqFile, reader.SectionLoader(),
 		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
 		//dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
-		dataset.Equals(labels.MetricName, "nginx_ingress_controller_request_duration_seconds_bucket"),
+		compute.Equals(labels.MetricName, "nginx_ingress_controller_request_duration_seconds_bucket"),
 		//dataset.Equals("namespace", "fbs-production"),
 	)
 	selections, err := scanner.Select()
@@ -95,7 +95,7 @@ func main() {
 	projectionColumns := []string{schema.SeriesIDColumn, labels.MetricName, "namespace", schema.ChunkBytesColumn}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
-		projection := dataset.ProjectColumns(selection, reader.SectionLoader(), batchSize, projectionColumns...)
+		projection := compute.ProjectColumns(selection, reader.SectionLoader(), batchSize, projectionColumns...)
 		defer projection.Close()
 
 		for {
