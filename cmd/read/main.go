@@ -79,10 +79,10 @@ func main() {
 	fmt.Println("Scanning...")
 	scanStart := time.Now()
 	scanner := compute.NewScanner(pqFile, reader.SectionLoader(),
-		//dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
-		//dataset.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
+		//compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
+		//compute.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
 		compute.Equals(labels.MetricName, "nginx_ingress_controller_request_duration_seconds_bucket"),
-		//dataset.Equals("namespace", "fbs-production"),
+		//compute.Equals("namespace", "fbs-production"),
 	)
 	selections, err := scanner.Select()
 	if err != nil {
