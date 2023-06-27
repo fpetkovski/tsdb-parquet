@@ -17,6 +17,7 @@ import (
 
 const (
 	ReadBufferSize         = 4 * 1024
+	prefetchBufferSize     = 4 * 1024 * 1024
 	defaultSectionCacheDir = "./cache"
 )
 
@@ -37,7 +38,7 @@ type FileReader struct {
 	file       *parquet.File
 	dataReader io.ReaderAt
 
-	sectionLoader *sectionLoader
+	sectionLoader *sections
 }
 
 func OpenFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
@@ -131,7 +132,7 @@ func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMe
 
 func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) error {
 	var errGroup errgroup.Group
-	errGroup.SetLimit(16)
+	errGroup.SetLimit(32)
 	for _, rowGroup := range metadata.RowGroups {
 		for _, column := range rowGroup.Columns {
 			dataPageOffset := column.MetaData.DataPageOffset
@@ -140,8 +141,11 @@ func loadDictionaryPages(loader SectionLoader, metadata *metadata.FileMetaData) 
 				continue
 			}
 			errGroup.Go(func() error {
-				_, err := loader.LoadSection(*dictionaryPageOffset, dataPageOffset)
-				return err
+				sec, err := loader.NewSection(*dictionaryPageOffset, dataPageOffset)
+				if err != nil {
+					return err
+				}
+				return sec.LoadAll()
 			})
 		}
 	}
@@ -172,6 +176,9 @@ func loadBloomFilters(loader SectionLoader, metadata *metadata.FileMetaData) err
 	from := bloomFilterOffsets[0]
 	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024
 
-	_, err := loader.LoadSection(from, to)
-	return err
+	sec, err := loader.NewSection(from, to)
+	if err != nil {
+		return err
+	}
+	return sec.LoadAll()
 }

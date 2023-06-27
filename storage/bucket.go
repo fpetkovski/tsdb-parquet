@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/thanos-io/objstore"
 )
@@ -34,10 +33,7 @@ func (r BucketReader) Attributes(ctx context.Context, name string) (objstore.Obj
 }
 
 func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
-	start := time.Now()
-	defer func() {
-		fmt.Printf("Read %dKB in %s. Estimated throughput: %f MB/s\n", n/1024, time.Since(start), float64(n)/1024/1024/time.Since(start).Seconds())
-	}()
+	fmt.Println("Read bucket at", off, "to", off + int64(len(p)), fmt.Sprintf("%dKB", len(p)/1024))
 	rangeReader, err := r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
 	if err != nil {
 		return 0, err
@@ -46,7 +42,7 @@ func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
 	return io.ReadFull(rangeReader, p)
 }
 
-func (r BucketReader) ReaderAt(p []byte, off int64) (closer io.ReadCloser, err error) {
-	fmt.Println("Read bucket at", off, fmt.Sprintf("%dKB", len(p)/1024))
-	return r.bucket.GetRange(context.Background(), r.name, off, int64(len(p)))
+func (r BucketReader) ReaderAt(off, length int64) (closer io.ReadCloser, err error) {
+	fmt.Println("Reader for", off, "to", off + length, fmt.Sprintf("%dKB", length/1024))
+	return r.bucket.GetRange(context.Background(), r.name, off, length)
 }

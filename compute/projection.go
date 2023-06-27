@@ -25,7 +25,11 @@ func ProjectColumns(selection dataset.SelectionResult, reader db.SectionLoader, 
 		if !ok {
 			continue
 		}
-		projections = append(projections, newColumnProjection(column, selection, reader, batchSize, pool))
+		colProjection, err := newColumnProjection(column, selection, reader, batchSize, pool)
+		if err != nil {
+			panic(err)
+		}
+		projections = append(projections, colProjection)
 	}
 
 	return Projections{
@@ -76,7 +80,7 @@ type columnProjection struct {
 	currentPage   parquet.Page
 	currentReader parquet.ValueReader
 
-	sectionCloser io.Closer
+	section db.Section
 }
 
 func newColumnProjection(
@@ -85,19 +89,24 @@ func newColumnProjection(
 	loader db.SectionLoader,
 	batchSize int64,
 	pool *valuesPool,
-) *columnProjection {
+) (*columnProjection, error) {
 	chunk := selection.RowGroup().ColumnChunks()[column.ColumnIndex]
 	pages := dataset.SelectPages(chunk, selection)
+	section, err := loader.NewSection(pages.PageOffset(0), pages.PageOffset(pages.NumPages()-1))
+	if err != nil {
+		return nil, err
+	}
 
 	return &columnProjection{
 		batchSize: batchSize,
 		pages:     pages,
 		pool:      pool,
 		loader:    loader,
+		section:   db.AsyncSection(section, 3),
 		currentReader: parquet.ValueReaderFunc(func(values []parquet.Value) (int, error) {
 			return 0, io.EOF
 		}),
-	}
+	}, nil
 }
 
 func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
@@ -136,18 +145,19 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 }
 
 func (p *columnProjection) loadColumnData() error {
-	var err error
-	p.once.Do(func() {
-		offsetFrom, offsetTo := p.pages.OffsetRange()
-		p.sectionCloser, err = p.loader.LoadSection(offsetFrom, offsetTo)
-	})
-	return err
+	err := p.section.LoadNext()
+	if err != nil && err != io.EOF {
+		return err
+	}
+	return nil
 }
 
 func (p *columnProjection) Close() error {
 	if p.currentPage != nil {
 		parquet.Release(p.currentPage)
 	}
-	p.sectionCloser.Close()
+	if p.section != nil {
+		p.section.Close()
+	}
 	return p.pages.Close()
 }

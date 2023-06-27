@@ -31,12 +31,15 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 	pages := SelectPages(chunk, ranges)
 	defer pages.Close()
 
-	offsetFrom, offsetTo := pages.OffsetRange()
-	sectionCloser, err := r.reader.LoadSection(offsetFrom, offsetTo)
+	offsetFrom, offsetTo := pages.PageOffset(0), pages.PageOffset(pages.NumPages()-1)
+	sectionCloser, err := r.reader.NewSection(offsetFrom, offsetTo)
 	if err != nil {
 		return nil, err
 	}
 	defer sectionCloser.Close()
+	if err := sectionCloser.LoadAll(); err != nil {
+		return nil, err
+	}
 
 	var numMatches int64
 	var selection RowSelection
@@ -54,7 +57,7 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 			return nil, err
 		}
 
-		skipFrom, skipTo := pages.RowIndex(), pages.RowIndex()
+		skipFrom, skipTo := pages.CurrentRowIndex(), pages.CurrentRowIndex()
 		for i := 0; i < n; i++ {
 			skipTo++
 			matches := r.matches(values[i])
@@ -86,16 +89,18 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 	pages := SelectPages(chunk, ranges)
 	defer pages.Close()
 
-	offsetFrom, offsetTo := pages.OffsetRange()
-	sectionCloser, err := r.reader.LoadSection(offsetFrom, offsetTo)
+	offsetFrom, offsetTo := pages.PageOffset(0), pages.PageOffset(pages.NumPages()-1)
+	sectionCloser, err := r.reader.NewSection(offsetFrom, offsetTo)
 	if err != nil {
 		return nil, err
 	}
 	defer sectionCloser.Close()
+	if err := sectionCloser.LoadAll(); err != nil {
+		return nil, err
+	}
 
 	var dictionaryValue int32 = -1
 	var once sync.Once
-	var numMatches int64
 	var selection RowSelection
 	for {
 		page, err := pages.ReadPage()
@@ -111,17 +116,16 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 			dictionaryValue = getDictionaryEncodedValue(page, r.matches)
 		})
 		if dictionaryValue == -1 {
-			selection = selection.Skip(pages.RowIndex(), page.NumRows())
+			selection = selection.Skip(pages.CurrentRowIndex(), page.NumRows())
 			parquet.Release(page)
 			break
 		}
 
 		encodedValues := data.Int32()
-		skipFrom, skipTo := pages.RowIndex(), pages.RowIndex()
+		skipFrom, skipTo := pages.CurrentRowIndex(), pages.CurrentRowIndex()
 		for _, val := range encodedValues {
 			skipTo++
 			if val == dictionaryValue {
-				numMatches++
 				selection = selection.Skip(skipFrom, skipTo-1)
 				skipFrom = skipTo
 			}

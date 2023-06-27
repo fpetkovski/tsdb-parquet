@@ -2,13 +2,13 @@ package compute
 
 import (
 	"bytes"
-	"io"
 	"testing"
 
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
 
 	"fpetkovski/tsdb-parquet/dataset"
+	"fpetkovski/tsdb-parquet/db"
 )
 
 var columns = []string{"ColumnA", "ColumnB", "ColumnC", "ColumnD"}
@@ -169,9 +169,7 @@ func TestScan(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, rowGroup := range pqFile.RowGroups() {
-				expected := dataset.NewSelectionResult(
-					rowGroup, tcase.expectedRanges,
-				)
+				expected := dataset.NewSelectionResult(rowGroup, tcase.expectedRanges)
 				require.Equal(t, expected, rowRanges[0])
 			}
 		})
@@ -201,10 +199,14 @@ func createFile(parts [][]testRow) (*parquet.File, error) {
 
 type nopSectionLoader struct{}
 
-func (n nopSectionLoader) LoadSection(_, _ int64) (io.Closer, error) {
-	return &nopCloser{}, nil
+func (n nopSectionLoader) NewSection(from, to int64) (db.Section, error) {
+	return emptySection{}, nil
 }
 
-type nopCloser struct{}
+type emptySection struct{}
 
-func (n nopCloser) Close() error { return nil }
+func (n emptySection) LoadN(batchSize int64) error { return nil }
+
+func (n emptySection) LoadAll() error { return nil }
+
+func (n emptySection) Close() error { return nil }
