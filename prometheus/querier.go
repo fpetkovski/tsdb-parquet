@@ -7,8 +7,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/segmentio/parquet-go"
 
+	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/schema"
 )
+
+const seriesBatchSize = 32 * 1024
 
 func NewQuerier(ctx context.Context, file *parquet.File, sectionLoader db.SectionLoader, mint, maxt int64) (storage.Querier, error) {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -33,30 +37,30 @@ type querier struct {
 }
 
 func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	//opts := []dataset.ScannerOption{
-	//	dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
-	//	dataset.LessThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
-	//}
-	//for _, m := range matchers {
-	//	opts = append(opts, dataset.Equals(m.Name, m.Value))
-	//}
-	//
-	//scanner := dataset.NewScanner(q.file, q.sectionLoader, opts...)
-	//selection, err := scanner.Select()
-	//if err != nil {
-	//	return storage.ErrSeriesSet(err)
-	//}
-	//projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
-	//projection := dataset.ProjectColumns(selection[0], q.sectionLoader, projectionColumns...)
-	//labelValues, err := projection.ReadColumnRanges()
-	//if err != nil {
-	//	return storage.ErrSeriesSet(err)
-	//
-	//}
-	//return &seriesSet{
-	//	scanner: scanner,
-	//}
-	return nil
+	opts := []dataset.ScannerOption{
+		dataset.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
+		dataset.LessThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
+	}
+	for _, m := range matchers {
+		opts = append(opts, dataset.Equals(m.Name, m.Value))
+	}
+
+	scanner := dataset.NewScanner(q.file, q.sectionLoader, opts...)
+	selection, err := scanner.Select()
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
+	plan := dataset.DistinctByColumn(0, dataset.ProjectColumns(
+		selection[0],
+		q.sectionLoader,
+		seriesBatchSize,
+		projectionColumns...),
+	)
+
+	return &seriesSet{
+		plan: plan,
+	}
 }
 
 func (q querier) Close() error { return nil }

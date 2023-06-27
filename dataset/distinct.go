@@ -13,7 +13,7 @@ type Distinct struct {
 	pool       *valuesPool
 }
 
-func DistinctByColumn(projections Projections, byColumnIndex int) *Distinct {
+func DistinctByColumn(byColumnIndex int, projections Projections) *Distinct {
 	return &Distinct{
 		projection:     projections,
 		distinctColumn: byColumnIndex,

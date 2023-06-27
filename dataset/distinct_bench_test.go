@@ -39,7 +39,7 @@ func BenchmarkDistinct(b *testing.B) {
 		b.StopTimer()
 		selection := SelectRows(file.RowGroups()[0], SelectAll())
 		projection := ProjectColumns(selection, &nopSectionLoader{}, batchSize, cols...)
-		distinct := DistinctByColumn(projection, 0)
+		distinct := DistinctByColumn(0, projection)
 		defer distinct.Close()
 
 		b.StartTimer()
