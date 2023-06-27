@@ -89,11 +89,12 @@ func main() {
 
 	fmt.Println("Reading columns...")
 	projectStart := time.Now()
-	projectionColumns := []string{labels.MetricName, "namespace", schema.MinTColumn, schema.ChunkBytesColumn}
+	projectionColumns := []string{schema.SeriesIDColumn, labels.MetricName, "namespace"}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
 		projection := dataset.ProjectColumns(selection, reader.SectionLoader(), batchSize, projectionColumns...)
 		defer projection.Close()
+
 		for {
 			columns, err := projection.NextBatch()
 			if err == io.EOF {

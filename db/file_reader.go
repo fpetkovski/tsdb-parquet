@@ -41,7 +41,6 @@ type FileReader struct {
 }
 
 func OpenFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
-
 	partMetadata, err := readMetadata(partName+metadataFileSuffix, bucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading file metadata")

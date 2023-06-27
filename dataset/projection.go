@@ -11,8 +11,9 @@ import (
 )
 
 type Projections struct {
-	pool    *valuesPool
-	columns []*columnProjection
+	pool      *valuesPool
+	columns   []*columnProjection
+	batchSize int64
 }
 
 func ProjectColumns(selection SelectionResult, reader db.SectionLoader, batchSize int64, columnNames ...string) Projections {
@@ -27,8 +28,9 @@ func ProjectColumns(selection SelectionResult, reader db.SectionLoader, batchSiz
 	}
 
 	return Projections{
-		pool:    pool,
-		columns: projections,
+		pool:      pool,
+		columns:   projections,
+		batchSize: batchSize,
 	}
 }
 
@@ -47,6 +49,10 @@ func (p Projections) Release(batch [][]parquet.Value) {
 	for _, column := range batch {
 		p.pool.put(column)
 	}
+}
+
+func (p Projections) BatchSize() int64 {
+	return p.batchSize
 }
 
 func (p Projections) Close() error {
