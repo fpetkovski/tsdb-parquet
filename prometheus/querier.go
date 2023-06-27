@@ -51,7 +51,7 @@ func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.
 		return storage.ErrSeriesSet(err)
 	}
 	projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
-	plan := compute.DistinctByColumn(0, compute.ProjectColumns(
+	plan := compute.UniqueByColumn(0, compute.ProjectColumns(
 		selection[0],
 		q.sectionLoader,
 		seriesBatchSize,

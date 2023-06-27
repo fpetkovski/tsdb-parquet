@@ -4,7 +4,7 @@ import (
 	"github.com/segmentio/parquet-go"
 )
 
-type Distinct struct {
+type Unique struct {
 	projection     Projections
 	distinctColumn int
 
@@ -13,8 +13,8 @@ type Distinct struct {
 	pool       *valuesPool
 }
 
-func DistinctByColumn(byColumnIndex int, projections Projections) *Distinct {
-	return &Distinct{
+func UniqueByColumn(byColumnIndex int, projections Projections) *Unique {
+	return &Unique{
 		projection:     projections,
 		distinctColumn: byColumnIndex,
 
@@ -24,7 +24,7 @@ func DistinctByColumn(byColumnIndex int, projections Projections) *Distinct {
 	}
 }
 
-func (d *Distinct) NextBatch() ([][]parquet.Value, error) {
+func (d *Unique) NextBatch() ([][]parquet.Value, error) {
 	inputBatch, err := d.projection.NextBatch()
 	if err != nil {
 		return nil, err
@@ -54,12 +54,12 @@ func (d *Distinct) NextBatch() ([][]parquet.Value, error) {
 	return outputBatch, nil
 }
 
-func (d *Distinct) Release(batch [][]parquet.Value) {
+func (d *Unique) Release(batch [][]parquet.Value) {
 	for _, column := range batch {
 		d.pool.put(column)
 	}
 }
 
-func (d *Distinct) Close() error {
+func (d *Unique) Close() error {
 	return d.projection.Close()
 }
