@@ -6,7 +6,6 @@ import (
 )
 
 type series struct {
-
 }
 
 func (s series) Labels() labels.Labels {

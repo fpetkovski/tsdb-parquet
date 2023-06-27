@@ -24,6 +24,7 @@ func NewBucketReader(name string, bucket objstore.Bucket) *BucketReader {
 		bucket: bucket,
 	}
 }
+
 func (r BucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	return r.bucket.Get(ctx, name)
 }
