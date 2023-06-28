@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/thanos-io/objstore"
 )
@@ -43,6 +44,9 @@ func (r BucketReader) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (r BucketReader) ReaderAt(off, length int64) (closer io.ReadCloser, err error) {
-	fmt.Println("Reader for", off, "to", off + length, fmt.Sprintf("%dKB", length/1024))
+	start := time.Now()
+	defer func() {
+		fmt.Println("Created reader for", off, "to", off + length, fmt.Sprintf("%dKB", length/1024), "in", time.Since(start))
+	}()
 	return r.bucket.GetRange(context.Background(), r.name, off, length)
 }
