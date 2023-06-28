@@ -40,20 +40,19 @@ type Writer struct {
 	pageBufferSize int
 }
 
-func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema, option ...WriterOption) *Writer {
-	sortingColums := make([]parquet.SortingColumn, 0, len(columns)+2)
+func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Writer {
+	sortingColums := make([]parquet.SortingColumn, 0, len(labelColumns)+2)
 	sortingColums = append(sortingColums, parquet.Ascending(schema.MinTColumn))
 	sortingColums = append(sortingColums, parquet.Ascending(schema.MaxTColumn))
-	for _, lbl := range columns {
+	for _, lbl := range labelColumns {
 		sortingColums = append(sortingColums, parquet.Ascending(lbl))
 	}
 	slices.SortFunc(sortingColums, func(a, b parquet.SortingColumn) bool {
-		aName, bName := a.Path()[0], b.Path()[0]
-		return CompareColumns(aName, bName)
+		return CompareColumns(a.Path()[0], b.Path()[0])
 	})
 
-	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(columns))
-	for _, lbl := range columns {
+	bloomFilters := make([]parquet.BloomFilterColumn, 0, len(labelColumns))
+	for _, lbl := range labelColumns {
 		bloomFilters = append(bloomFilters, parquet.SplitBlockFilter(10, lbl))
 	}
 
@@ -62,8 +61,7 @@ func NewWriter(dir string, columns []string, chunkSchema *schema.ChunkSchema, op
 		partID:         -1,
 		sortingColumns: sortingColums,
 		bloomFilters:   bloomFilters,
-		schema:         chunkSchema,
-
+		schema:         schema.MakeChunkSchema(labelColumns),
 		pageBufferSize: MaxPageSize,
 	}
 	for _, opt := range option {

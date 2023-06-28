@@ -61,12 +61,7 @@ func main() {
 	}
 	log.Println("Converting metrics to parquet", "num_metrics", len(metricNames))
 
-	tableSchema := schema.MakeChunkSchema(allLabels)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	writer := db.NewWriter("./out", allLabels, tableSchema)
+	writer := db.NewWriter("./out", allLabels)
 	defer writer.Close()
 
 	ps, err := ir.Postings(index.AllPostingsKey())

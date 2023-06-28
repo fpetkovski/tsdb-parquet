@@ -27,8 +27,8 @@ func TestSectionLoading(t *testing.T) {
 	reader, err := NewFileReader("part.0", inspector, WithSectionCacheDir(cacheDir))
 	require.NoError(t, err)
 
-	assertNumSections(t, cacheDir, 3)
-	require.Equal(t, 3, inspector.getRangeRequests)
+	assertNumSections(t, cacheDir, 1)
+	require.Equal(t, 1, inspector.getRangeRequests)
 
 	loader := reader.SectionLoader()
 	var readBatchSize int64 = 4 * 1024
@@ -45,11 +45,11 @@ func TestSectionLoading(t *testing.T) {
 		}
 	}
 
-	assertNumSections(t, cacheDir, 4)
-	require.Equal(t, 4, inspector.getRangeRequests)
+	assertNumSections(t, cacheDir, 2)
+	require.Equal(t, 2, inspector.getRangeRequests)
 
 	require.NoError(t, sec.Close())
-	assertNumSections(t, cacheDir, 3)
+	assertNumSections(t, cacheDir, 1)
 
 	require.NoError(t, reader.Close())
 	assertNumSections(t, cacheDir, 0)
@@ -57,7 +57,7 @@ func TestSectionLoading(t *testing.T) {
 
 func generatePart(dir string, numSeries int) error {
 	columns := []string{"a", "b"}
-	writer := NewWriter(dir, columns, schema.MakeChunkSchema(columns))
+	writer := NewWriter(dir, columns)
 	defer writer.Close()
 
 	for i := 0; i < numSeries; i++ {
