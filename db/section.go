@@ -29,18 +29,11 @@ type section struct {
 
 func (s section) LoadNext() error {
 	start := time.Now()
-	defer func() {
-		fmt.Printf("Read %dKB in %s. Estimated throughput: %f MB/s\n", s.readBatchSize, time.Since(start), float64(s.readBatchSize)/1024/1024/time.Since(start).Seconds())
-	}()
-
-	toCopy := s.readBatchSize
-	for toCopy > 0 {
-		n, err := io.CopyN(s.bytes, s.reader, toCopy)
-		if err != nil {
-			return err
-		}
-		toCopy -= n
+	n, err := io.CopyN(s.bytes, s.reader, s.readBatchSize)
+	if err != nil {
+		return err
 	}
+	fmt.Printf("Read %dKB in %s. Estimated throughput: %f MB/s\n", n, time.Since(start), float64(n)/1024/1024/time.Since(start).Seconds())
 	return nil
 }
 
@@ -57,8 +50,8 @@ type asyncSection struct {
 	section Section
 	buffer  chan error
 
-	cancelFunc func()
-	ctx        context.Context
+	cancel func()
+	ctx    context.Context
 }
 
 func AsyncSection(s Section, bufSize int64) Section {
@@ -67,7 +60,7 @@ func AsyncSection(s Section, bufSize int64) Section {
 		buffer:  make(chan error, bufSize),
 	}
 
-	a.ctx, a.cancelFunc = context.WithCancel(context.Background())
+	a.ctx, a.cancel = context.WithCancel(context.Background())
 	go a.loadNextAsync()
 
 	return a
@@ -90,6 +83,7 @@ func (a asyncSection) loadNextAsync() {
 }
 
 func (a asyncSection) Close() error {
+	a.cancel()
 	for range a.buffer {
 	}
 	return a.section.Close()
