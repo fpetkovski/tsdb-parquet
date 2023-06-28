@@ -40,7 +40,7 @@ type FileReader struct {
 	sectionLoader *sections
 }
 
-func OpenFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
+func NewFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
 	partMetadata, err := readMetadata(partName+metadataFileSuffix, bucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading file metadata")
@@ -65,10 +65,10 @@ func OpenFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderO
 		return nil, errors.Wrap(err, "error reading column bloom filters")
 	}
 
-	fmt.Println("Loading dictionary sections")
-	if err := loadDictionaryPages(fsSectionLoader, partMetadata); err != nil {
-		return nil, errors.Wrap(err, "error reading column dictionaries")
-	}
+	//fmt.Println("Loading dictionary sections")
+	//if err := loadDictionaryPages(fsSectionLoader, partMetadata); err != nil {
+	//	return nil, errors.Wrap(err, "error reading column dictionaries")
+	//}
 
 	reader := &FileReader{
 		size:          dataFileAtts.Size,
@@ -173,7 +173,7 @@ func loadBloomFilters(loader SectionLoader, metadata *metadata.FileMetaData) err
 	}
 
 	from := bloomFilterOffsets[0]
-	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + 4*1024
+	to := bloomFilterOffsets[len(bloomFilterOffsets)-1] + ReadBufferSize
 
 	sec, err := loader.NewSection(from, to)
 	if err != nil {

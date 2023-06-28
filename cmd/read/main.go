@@ -57,7 +57,7 @@ func main() {
 	//	log.Fatalln(err)
 	//}
 
-	reader, err := db.OpenFileReader("compact-2.7", bucket)
+	reader, err := db.NewFileReader("compact-2.7", bucket)
 	if err != nil {
 		log.Fatalln(err)
 	}

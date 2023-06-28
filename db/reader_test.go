@@ -24,7 +24,7 @@ func TestSectionLoading(t *testing.T) {
 	inspector := &bucketInspector{Bucket: bucket}
 
 	cacheDir := t.TempDir()
-	reader, err := OpenFileReader("part.0", inspector, WithSectionCacheDir(cacheDir))
+	reader, err := NewFileReader("part.0", inspector, WithSectionCacheDir(cacheDir))
 	require.NoError(t, err)
 
 	assertNumSections(t, cacheDir, 3)
