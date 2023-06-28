@@ -122,7 +122,7 @@ type emptyPageSelection struct{}
 
 func (e emptyPageSelection) ReadPage() (parquet.Page, error) { return nil, io.EOF }
 
-func (e emptyPageSelection) NumPages() int64        { return 0 }
-func (e emptyPageSelection) CurrentRowIndex() int64 { return 0 }
-func (e emptyPageSelection) PageOffset(_ int64) int64        { return 0 }
-func (e emptyPageSelection) Close() error                    { return nil }
+func (e emptyPageSelection) NumPages() int64          { return 0 }
+func (e emptyPageSelection) CurrentRowIndex() int64   { return 0 }
+func (e emptyPageSelection) PageOffset(_ int64) int64 { return 0 }
+func (e emptyPageSelection) Close() error             { return nil }

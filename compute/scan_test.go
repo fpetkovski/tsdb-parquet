@@ -199,14 +199,16 @@ func createFile(parts [][]testRow) (*parquet.File, error) {
 
 type nopSectionLoader struct{}
 
-func (n nopSectionLoader) NewSection(from, to int64) (db.Section, error) {
+func (n nopSectionLoader) NewSectionSize(_, _, _ int64) (db.Section, error) {
+	return emptySection{}, nil
+}
+
+func (n nopSectionLoader) NewSection(_, _ int64) (db.Section, error) {
 	return emptySection{}, nil
 }
 
 type emptySection struct{}
 
-func (n emptySection) LoadN(batchSize int64) error { return nil }
-
-func (n emptySection) LoadAll() error { return nil }
-
-func (n emptySection) Close() error { return nil }
+func (n emptySection) LoadNext() error { return nil }
+func (n emptySection) LoadAll() error  { return nil }
+func (n emptySection) Close() error    { return nil }

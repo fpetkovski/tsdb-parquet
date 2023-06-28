@@ -113,3 +113,19 @@ func (d fileBytes) Close() error {
 	}
 	return os.Remove(d.path)
 }
+
+type memoryBytes struct {
+	bytes []byte
+}
+
+func (m *memoryBytes) ReadAt(p []byte, off int64) (n int, err error) {
+	copy(p, m.bytes[off:off+int64(len(p))])
+	return len(p), nil
+}
+
+func (m *memoryBytes) Write(p []byte) (n int, err error) {
+	m.bytes = append(m.bytes, p...)
+	return len(p), nil
+}
+
+func (m *memoryBytes) Close() error { return nil }

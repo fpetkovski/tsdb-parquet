@@ -1,76 +1,80 @@
 package db
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+
+	"fpetkovski/tsdb-parquet/schema"
 )
 
 func TestSectionLoading(t *testing.T) {
 	dir := t.TempDir()
-	partName, err := generatePart(dir, 50_000)
-	require.NoError(t, err)
+	require.NoError(t, generatePart(dir, 10000))
 
 	bucket, err := filesystem.NewBucket(dir)
 	require.NoError(t, err)
 	inspector := &bucketInspector{Bucket: bucket}
 
 	cacheDir := t.TempDir()
-	reader, err := OpenFileReader(partName, inspector, WithSectionCacheDir(cacheDir))
+	reader, err := OpenFileReader("part.0", inspector, WithSectionCacheDir(cacheDir))
 	require.NoError(t, err)
 
+	assertNumSections(t, cacheDir, 3)
+	require.Equal(t, 3, inspector.getRangeRequests)
+
 	loader := reader.SectionLoader()
-	sec, err := loader.NewSection(0, 5*1000)
+	var readBatchSize int64 = 4 * 1024
+	sec, err := loader.NewSectionSize(0, reader.FileSize(), readBatchSize)
 	require.NoError(t, err)
 
 	for chunk := 0; chunk < 5; chunk++ {
 		require.NoError(t, sec.LoadNext())
 
-		buf := make([]byte, 500)
-		for readNum := 0; readNum < 100; readNum++ {
-			_, err = reader.ReadAt(buf, int64(chunk*1000))
+		buf := make([]byte, readBatchSize)
+		for readNum := 0; readNum < 10; readNum++ {
+			_, err = reader.ReadAt(buf, int64(chunk)*readBatchSize)
 			require.NoError(t, err)
 		}
-		fmt.Println(string(buf))
-		fmt.Println()
 	}
 
-	assertNumSections(t, cacheDir, 1)
-	require.Equal(t, 1, inspector.getRangeRequests)
+	assertNumSections(t, cacheDir, 4)
+	require.Equal(t, 4, inspector.getRangeRequests)
 
 	require.NoError(t, sec.Close())
-	assertNumSections(t, cacheDir, 0)
+	assertNumSections(t, cacheDir, 3)
 
 	require.NoError(t, reader.Close())
 	assertNumSections(t, cacheDir, 0)
 }
 
-func generatePart(dir string, length int) (string, error) {
-	partName := fmt.Sprintf("%s/test.parquet", dir)
-	f, err := os.Create(partName)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
+func generatePart(dir string, numSeries int) error {
+	columns := []string{"a", "b"}
+	writer := NewWriter(dir, columns, schema.MakeChunkSchema(columns))
+	defer writer.Close()
 
-	writer := bufio.NewWriter(f)
-	for i := 0; i < length; i++ {
-		if _, err := writer.WriteString(fmt.Sprintf("%d-", i)); err != nil {
-			return "", err
+	for i := 0; i < numSeries; i++ {
+		lblA := strconv.Itoa(i)
+		lblB := strconv.Itoa(i % 2)
+		lbls := labels.FromStrings("a", lblA, "b", lblB)
+		chunk := schema.Chunk{
+			Labels:     lbls,
+			MinT:       0,
+			MaxT:       100,
+			ChunkBytes: nil,
+		}
+		if err := writer.Write(chunk); err != nil {
+			return err
 		}
 	}
-	if err := writer.Flush(); err != nil {
-		return "", err
-	}
-
-	return "test", nil
+	return nil
 }
 
 func assertNumSections(t *testing.T, cacheDir string, expectedSections int) {

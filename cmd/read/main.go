@@ -28,14 +28,7 @@ const batchSize = 16 * 1024
 
 func main() {
 	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
+
 	if *heapprofile != "" {
 		defer func() {
 			f, err := os.Create(*heapprofile)
@@ -74,6 +67,15 @@ func main() {
 	pqFile, err := parquet.OpenFile(reader, reader.FileSize(), parquet.ReadBufferSize(db.ReadBufferSize))
 	if err != nil {
 		log.Fatalln(err)
+	}
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
 	}
 
 	fmt.Println("Scanning...")

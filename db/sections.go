@@ -14,6 +14,7 @@ import (
 var errSectionNotFound = errors.New("section not found")
 
 type SectionLoader interface {
+	NewSectionSize(from, to, size int64) (Section, error)
 	NewSection(from, to int64) (Section, error)
 }
 
@@ -37,8 +38,12 @@ func newFilesystemLoader(reader *storage.BucketReader, fileSize int64, cacheDir 
 }
 
 func (fs *sections) NewSection(from, to int64) (Section, error) {
+	return fs.NewSectionSize(from, to, prefetchBufferSize)
+}
+
+func (fs *sections) NewSectionSize(from, to, size int64) (Section, error) {
 	fs.mu.RLock()
-	sec, ok := fs.findSection(from, to)
+	sec, ok := fs.find(from, to)
 	if ok {
 		fs.mu.RUnlock()
 		return sec, nil
@@ -50,20 +55,19 @@ func (fs *sections) NewSection(from, to int64) (Section, error) {
 		to = fs.fileSize
 	}
 
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	sec, ok = fs.find(from, to)
+	if ok {
+		return sec, nil
+	}
+
 	sectionReader, err := fs.reader.ReaderAt(from, to-from)
 	if err != nil {
 		return nil, err
 	}
 
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-	sec, ok = fs.findSection(from, to)
-	if ok {
-		sectionReader.Close()
-		return sec, nil
-	}
-
-	sec, err = fs.newDiskSection(from, to, prefetchBufferSize, fs.cacheDir, sectionReader)
+	sec, err = fs.newDiskSection(from, to, size, fs.cacheDir, sectionReader)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +80,7 @@ func (fs *sections) ReadAt(p []byte, absOffset int64) (int, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	s, ok := fs.findSection(absOffset, absOffset+int64(len(p)))
+	s, ok := fs.find(absOffset, absOffset+int64(len(p)))
 	if ok {
 		relOffset := absOffset - s.from
 		return s.bytes.ReadAt(p, relOffset)
@@ -85,7 +89,7 @@ func (fs *sections) ReadAt(p []byte, absOffset int64) (int, error) {
 	return 0, errSectionNotFound
 }
 
-func (fs *sections) findSection(from, to int64) (section, bool) {
+func (fs *sections) find(from, to int64) (section, bool) {
 	for _, sec := range fs.loadedSections {
 		if sec.from <= from && to <= sec.to {
 			return sec, true
@@ -136,5 +140,18 @@ func (fs *sections) newDiskSection(from, to, readBatchSize int64, dir string, re
 		readBatchSize: readBatchSize,
 		reader:        reader,
 		bytes:         fileBytes{path: filePath, File: f},
+	}, nil
+}
+
+func (fs *sections) newMemorySection(from, to, readBatchSize int64, reader io.Reader) (section, error) {
+	buffer := make([]byte, 0, to-from)
+
+	return section{
+		sections:      fs,
+		from:          from,
+		to:            to,
+		readBatchSize: readBatchSize,
+		reader:        reader,
+		bytes:         &memoryBytes{bytes: buffer},
 	}, nil
 }
