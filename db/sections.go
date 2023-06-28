@@ -2,10 +2,6 @@ package db
 
 import (
 	"errors"
-	"fmt"
-	"io"
-	"os"
-	"path"
 	"sync"
 
 	"fpetkovski/tsdb-parquet/storage"
@@ -124,34 +120,4 @@ func (fs *sections) Close() error {
 	}
 	fs.loadedSections = fs.loadedSections[:0]
 	return nil
-}
-
-func (fs *sections) newDiskSection(from, to, readBatchSize int64, dir string, reader io.Reader) (section, error) {
-	filePath := path.Join(dir, fmt.Sprintf("%d-%d.section", from, to))
-	f, err := os.Create(filePath)
-	if err != nil {
-		return section{}, err
-	}
-
-	return section{
-		sections:      fs,
-		from:          from,
-		to:            to,
-		readBatchSize: readBatchSize,
-		reader:        reader,
-		bytes:         fileBytes{path: filePath, File: f},
-	}, nil
-}
-
-func (fs *sections) newMemorySection(from, to, readBatchSize int64, reader io.Reader) (section, error) {
-	buffer := make([]byte, 0, to-from)
-
-	return section{
-		sections:      fs,
-		from:          from,
-		to:            to,
-		readBatchSize: readBatchSize,
-		reader:        reader,
-		bytes:         &memoryBytes{bytes: buffer},
-	}, nil
 }
