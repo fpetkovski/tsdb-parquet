@@ -32,19 +32,20 @@ func (r decodingFilter) FilterRows(chunk parquet.ColumnChunk, ranges SelectionRe
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.PageOffset(0), pages.PageOffset(pages.NumPages()-1)
-	sectionCloser, err := r.reader.NewSection(offsetFrom, offsetTo)
+	section, err := r.reader.NewSection(offsetFrom, offsetTo)
 	if err != nil {
 		return nil, err
 	}
-	defer sectionCloser.Close()
-	if err := sectionCloser.LoadAll(); err != nil {
-		return nil, err
-	}
+	section = db.AsyncSection(section, 3)
+	defer section.Close()
 
 	var numMatches int64
 	var selection RowSelection
 	values := make([]parquet.Value, 4*1024)
 	for {
+		if loadErr := section.LoadNext(); loadErr != nil && loadErr != io.EOF {
+			return nil, loadErr
+		}
 		page, err := pages.ReadPage()
 		if err == io.EOF {
 			break
@@ -90,19 +91,20 @@ func (r dictionaryFilter) FilterRows(chunk parquet.ColumnChunk, ranges Selection
 	defer pages.Close()
 
 	offsetFrom, offsetTo := pages.PageOffset(0), pages.PageOffset(pages.NumPages()-1)
-	sectionCloser, err := r.reader.NewSection(offsetFrom, offsetTo)
+	section, err := r.reader.NewSection(offsetFrom, offsetTo)
 	if err != nil {
 		return nil, err
 	}
-	defer sectionCloser.Close()
-	if err := sectionCloser.LoadAll(); err != nil {
-		return nil, err
-	}
+	section = db.AsyncSection(section, 3)
+	defer section.Close()
 
 	var dictionaryValue int32 = -1
 	var once sync.Once
 	var selection RowSelection
 	for {
+		if loadErr := section.LoadNext(); loadErr != nil && loadErr != io.EOF {
+			return nil, loadErr
+		}
 		page, err := pages.ReadPage()
 		if err == io.EOF {
 			break
