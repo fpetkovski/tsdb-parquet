@@ -122,9 +122,6 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 		// If the current page is exhausted, move over to the next page.
 		if readValsErr == io.EOF {
 			parquet.Release(p.currentPage)
-			if loadErr := p.loadPages(); err != nil {
-				return nil, loadErr
-			}
 			p.currentPage, err = p.pages.ReadPage()
 			if err != nil {
 				break
@@ -145,11 +142,11 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 }
 
 func (p *columnProjection) loadPages() error {
-	err := p.section.LoadNext()
-	if err != nil && err != io.EOF {
-		return err
-	}
-	return nil
+	var err error
+	p.once.Do(func() {
+		err = p.section.LoadAll()
+	})
+	return err
 }
 
 func (p *columnProjection) Close() error {
