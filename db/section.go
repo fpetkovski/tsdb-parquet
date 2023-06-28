@@ -2,9 +2,13 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"time"
 )
+
+const prefetchBufferSize = 4 * 1024 * 1024
 
 type Section interface {
 	io.Closer
@@ -24,6 +28,11 @@ type section struct {
 }
 
 func (s section) LoadNext() error {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("Read %dKB in %s. Estimated throughput: %f MB/s\n", s.readBatchSize, time.Since(start), float64(s.readBatchSize)/1024/1024/time.Since(start).Seconds())
+	}()
+
 	toCopy := s.readBatchSize
 	for toCopy > 0 {
 		n, err := io.CopyN(s.bytes, s.reader, toCopy)

@@ -17,7 +17,6 @@ import (
 
 const (
 	ReadBufferSize         = 4 * 1024
-	prefetchBufferSize     = 4 * 1024 * 1024
 	defaultSectionCacheDir = "./cache"
 )
 
