@@ -39,7 +39,7 @@ type querier struct {
 func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	opts := []compute.ScannerOption{
 		compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
-		compute.LessThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
+		compute.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(q.maxt)),
 	}
 	for _, m := range matchers {
 		opts = append(opts, compute.Equals(m.Name, m.Value))
@@ -58,9 +58,7 @@ func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.
 		projectionColumns...),
 	)
 
-	return &seriesSet{
-		plan: plan,
-	}
+	return newSeriesSet(plan, projectionColumns)
 }
 
 func (q querier) Close() error { return nil }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"fpetkovski/tsdb-parquet/dataset"
+	"fpetkovski/tsdb-parquet/pqtest"
 )
 
 func BenchmarkProjection(b *testing.B) {
@@ -17,11 +18,11 @@ func BenchmarkProjection(b *testing.B) {
 	numPages := 20
 	numRowsPerPage := numRows / numPages
 
-	rows := make([][]testRow, numPages)
+	rows := make([][]pqtest.Row, numPages)
 	for page := 0; page < numPages; page++ {
-		rows[page] = make([]testRow, numRowsPerPage)
+		rows[page] = make([]pqtest.Row, numRowsPerPage)
 		for row := 0; row < numRowsPerPage; row++ {
-			rows[page][row] = testRow{
+			rows[page][row] = pqtest.Row{
 				ColumnA: "value-" + strconv.Itoa(row%4),
 				ColumnB: "value-" + strconv.Itoa(row%3),
 				ColumnC: "value-" + strconv.Itoa(row%2),

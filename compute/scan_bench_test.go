@@ -9,6 +9,8 @@ import (
 
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
+
+	"fpetkovski/tsdb-parquet/pqtest"
 )
 
 func BenchmarkScanner_Scan(b *testing.B) {
@@ -18,12 +20,12 @@ func BenchmarkScanner_Scan(b *testing.B) {
 	numPages := 5
 	numRowsPerPage := numRows / numPages
 
-	rows := make([][]testRow, numPages)
+	rows := make([][]pqtest.Row, numPages)
 	for page := 0; page < numPages; page++ {
-		rows[page] = make([]testRow, numRowsPerPage)
+		rows[page] = make([]pqtest.Row, numRowsPerPage)
 
 		for row := 0; row < numRowsPerPage; row++ {
-			rows[page][row] = testRow{
+			rows[page][row] = pqtest.Row{
 				ColumnA: strconv.Itoa(row % 4),
 				ColumnB: strconv.Itoa(row % 3),
 				ColumnC: strconv.Itoa(row % 2),
@@ -49,8 +51,8 @@ func BenchmarkScanner_Scan(b *testing.B) {
 	}
 }
 
-func createSortedFile(dir string, parts [][]testRow) (*parquet.File, error) {
-	buffer := parquet.NewGenericBuffer[testRow](
+func createSortedFile(dir string, parts [][]pqtest.Row) (*parquet.File, error) {
+	buffer := parquet.NewGenericBuffer[pqtest.Row](
 		parquet.SortingRowGroupConfig(
 			parquet.SortingColumns(
 				parquet.Ascending("ColumnA"),
@@ -72,7 +74,7 @@ func createSortedFile(dir string, parts [][]testRow) (*parquet.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	writer := parquet.NewGenericWriter[testRow](f)
+	writer := parquet.NewGenericWriter[pqtest.Row](f)
 	if _, err := parquet.CopyRows(writer, buffer.Rows()); err != nil {
 		return nil, err
 	}

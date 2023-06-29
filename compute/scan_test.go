@@ -1,7 +1,6 @@
 package compute
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/segmentio/parquet-go"
@@ -9,25 +8,13 @@ import (
 
 	"fpetkovski/tsdb-parquet/dataset"
 	"fpetkovski/tsdb-parquet/db"
+	"fpetkovski/tsdb-parquet/pqtest"
 )
-
-var columns = []string{"ColumnA", "ColumnB", "ColumnC", "ColumnD"}
-
-type testRow struct {
-	ColumnA string `parquet:",dict"`
-	ColumnB string `parquet:",dict"`
-	ColumnC string `parquet:",dict"`
-	ColumnD string `parquet:",dict"`
-}
-
-func twoColumnRow(columnA string, columnB string) testRow {
-	return testRow{ColumnA: columnA, ColumnB: columnB}
-}
 
 func TestScan(t *testing.T) {
 	cases := []struct {
 		name           string
-		parts          [][]testRow
+		parts          [][]pqtest.Row
 		predicates     []ScannerOption
 		expectedRanges []dataset.PickRange
 	}{
@@ -36,10 +23,10 @@ func TestScan(t *testing.T) {
 			//	pages:      |_____|
 			//	selection:    |_|
 			name: "single page, single predicate",
-			parts: [][]testRow{{
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val1", "val2"),
-				twoColumnRow("val1", "val3"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val2"),
+				pqtest.TwoColumnRow("val1", "val3"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -51,18 +38,18 @@ func TestScan(t *testing.T) {
 			//	pages:      |_____||_____||_____|
 			//	selection:           |_|
 			name: "single row selection",
-			parts: [][]testRow{{
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val1", "val2"),
-				twoColumnRow("val1", "val3"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val2"),
+				pqtest.TwoColumnRow("val1", "val3"),
 			}, {
-				twoColumnRow("val2", "val4"),
-				twoColumnRow("val2", "val5"),
-				twoColumnRow("val2", "val6"),
+				pqtest.TwoColumnRow("val2", "val4"),
+				pqtest.TwoColumnRow("val2", "val5"),
+				pqtest.TwoColumnRow("val2", "val6"),
 			}, {
-				twoColumnRow("val3", "val1"),
-				twoColumnRow("val3", "val2"),
-				twoColumnRow("val3", "val3"),
+				pqtest.TwoColumnRow("val3", "val1"),
+				pqtest.TwoColumnRow("val3", "val2"),
+				pqtest.TwoColumnRow("val3", "val3"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnA", "val2"),
@@ -76,10 +63,10 @@ func TestScan(t *testing.T) {
 			//	pages:      |_____|
 			//	selection:  |_| |_|
 			name: "multiple selections within a single page",
-			parts: [][]testRow{{
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val1", "val2"),
-				twoColumnRow("val2", "val1"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val2"),
+				pqtest.TwoColumnRow("val2", "val1"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val1"),
@@ -91,15 +78,15 @@ func TestScan(t *testing.T) {
 			//	pages:      |_____||_____|
 			//	selection:      |___|
 			name: "multi row selection",
-			parts: [][]testRow{{
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val1", "val2"),
-				twoColumnRow("val2", "val2"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val2"),
+				pqtest.TwoColumnRow("val2", "val2"),
 			}, {
-				twoColumnRow("val2", "val2"),
-				twoColumnRow("val2", "val2"),
-				twoColumnRow("val2", "val3"),
+				pqtest.TwoColumnRow("val2", "val2"),
+				pqtest.TwoColumnRow("val2", "val2"),
+				pqtest.TwoColumnRow("val2", "val3"),
 			}},
 			predicates: []ScannerOption{
 				GreaterThanOrEqual("ColumnA", parquet.ByteArrayValue([]byte("val2"))),
@@ -112,18 +99,18 @@ func TestScan(t *testing.T) {
 			//	pages:      |_____||_____||_____|
 			//	selection:       |___| |___| |__|
 			name: "multiple disjoint rows",
-			parts: [][]testRow{{
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val2", "val2"),
-				twoColumnRow("val2", "val2"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val2", "val2"),
+				pqtest.TwoColumnRow("val2", "val2"),
 			}, {
-				twoColumnRow("val3", "val1"),
-				twoColumnRow("val3", "val3"),
-				twoColumnRow("val3", "val2"),
+				pqtest.TwoColumnRow("val3", "val1"),
+				pqtest.TwoColumnRow("val3", "val3"),
+				pqtest.TwoColumnRow("val3", "val2"),
 			}, {
-				twoColumnRow("val3", "val2"),
-				twoColumnRow("val3", "val1"),
-				twoColumnRow("val3", "val2"),
+				pqtest.TwoColumnRow("val3", "val2"),
+				pqtest.TwoColumnRow("val3", "val1"),
+				pqtest.TwoColumnRow("val3", "val2"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -135,23 +122,23 @@ func TestScan(t *testing.T) {
 			//	pages:      |__||______||_______||__|
 			//	selection:           |___| |___|  |_|
 			name: "different page sizes",
-			parts: [][]testRow{{
-				twoColumnRow("val0", "val0"),
+			parts: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val0", "val0"),
 			}, {
-				twoColumnRow("val1", "val1"),
-				twoColumnRow("val2", "val1"),
-				twoColumnRow("val3", "val2"),
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val2", "val1"),
+				pqtest.TwoColumnRow("val3", "val2"),
 			}, {
-				twoColumnRow("val4", "val2"),
-				twoColumnRow("val5", "val2"),
-				twoColumnRow("val6", "val3"),
-				twoColumnRow("val7", "val3"),
+				pqtest.TwoColumnRow("val4", "val2"),
+				pqtest.TwoColumnRow("val5", "val2"),
+				pqtest.TwoColumnRow("val6", "val3"),
+				pqtest.TwoColumnRow("val7", "val3"),
 			}, {
-				twoColumnRow("val8", "val2"),
-				twoColumnRow("val9", "val2"),
-				twoColumnRow("val9", "val3"),
+				pqtest.TwoColumnRow("val8", "val2"),
+				pqtest.TwoColumnRow("val9", "val2"),
+				pqtest.TwoColumnRow("val9", "val3"),
 			}, {
-				twoColumnRow("val9", "val2"),
+				pqtest.TwoColumnRow("val9", "val2"),
 			}},
 			predicates: []ScannerOption{
 				Equals("ColumnB", "val2"),
@@ -162,7 +149,7 @@ func TestScan(t *testing.T) {
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			pqFile, err := createFile(tcase.parts)
+			pqFile, err := pqtest.CreateFile(tcase.parts)
 
 			scanner := NewScanner(pqFile, &nopSectionLoader{}, tcase.predicates...)
 			rowRanges, err := scanner.Select()
@@ -174,27 +161,6 @@ func TestScan(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createFile(parts [][]testRow) (*parquet.File, error) {
-	var buffer bytes.Buffer
-	writer := parquet.NewGenericWriter[testRow](&buffer,
-		parquet.PageBufferSize(4),
-	)
-
-	for _, parts := range parts {
-		_, err := writer.Write(parts)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-
-	readBuf := bytes.NewReader(buffer.Bytes())
-	return parquet.OpenFile(readBuf, int64(len(buffer.Bytes())))
 }
 
 type nopSectionLoader struct{}

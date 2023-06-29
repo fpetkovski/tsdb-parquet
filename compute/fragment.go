@@ -6,8 +6,10 @@ import (
 	"github.com/segmentio/parquet-go"
 )
 
+type Batch [][]parquet.Value
+
 type Fragment interface {
 	io.Closer
-	NextBatch() ([][]parquet.Value, error)
-	Release([][]parquet.Value)
+	NextBatch() (Batch, error)
+	Release(Batch)
 }

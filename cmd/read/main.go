@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"runtime/trace"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +24,7 @@ import (
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var heapprofile = flag.String("heapprofile", "", "write heap profile to file")
+var tracefile = flag.String("trace", "", "write trace to file")
 
 const batchSize = 16 * 1024
 
@@ -37,6 +39,16 @@ func main() {
 			}
 			pprof.WriteHeapProfile(f)
 		}()
+	}
+	if *tracefile != "" {
+		f, err := os.Create(*tracefile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := trace.Start(f); err != nil {
+			log.Fatal(err)
+		}
+		defer trace.Stop()
 	}
 
 	config := storage.GCSConfig{
@@ -94,7 +106,7 @@ func main() {
 
 	fmt.Println("Reading columns...")
 	projectStart := time.Now()
-	projectionColumns := []string{schema.SeriesIDColumn, labels.MetricName, "namespace", schema.ChunkBytesColumn}
+	projectionColumns := []string{schema.ChunkBytesColumn}
 	for _, selection := range selections {
 		fmt.Println("Projecting", selection.NumRows(), "rows")
 		projection := compute.ProjectColumns(selection, reader.SectionLoader(), batchSize, projectionColumns...)

@@ -39,7 +39,7 @@ func ProjectColumns(selection dataset.SelectionResult, reader db.SectionLoader, 
 	}
 }
 
-func (p Projections) NextBatch() ([][]parquet.Value, error) {
+func (p Projections) NextBatch() (Batch, error) {
 	batch := make([][]parquet.Value, len(p.columns))
 	err := generic.ParallelEach(p.columns, func(i int, column *columnProjection) error {
 		var err error
@@ -50,7 +50,7 @@ func (p Projections) NextBatch() ([][]parquet.Value, error) {
 	return batch, err
 }
 
-func (p Projections) Release(batch [][]parquet.Value) {
+func (p Projections) Release(batch Batch) {
 	for _, column := range batch {
 		p.pool.put(column)
 	}
@@ -122,7 +122,7 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 		// If the current page is exhausted, move over to the next page.
 		if readValsErr == io.EOF {
 			parquet.Release(p.currentPage)
-			if loadErr := p.loadPages(); err != nil {
+			if loadErr := p.loadPages(); loadErr != nil {
 				return nil, loadErr
 			}
 			p.currentPage, err = p.pages.ReadPage()

@@ -24,7 +24,7 @@ func UniqueByColumn(byColumnIndex int, projections Projections) *Unique {
 	}
 }
 
-func (d *Unique) NextBatch() ([][]parquet.Value, error) {
+func (d *Unique) NextBatch() (Batch, error) {
 	inputBatch, err := d.projection.NextBatch()
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (d *Unique) NextBatch() ([][]parquet.Value, error) {
 	return outputBatch, nil
 }
 
-func (d *Unique) Release(batch [][]parquet.Value) {
+func (d *Unique) Release(batch Batch) {
 	for _, column := range batch {
 		d.pool.put(column)
 	}
