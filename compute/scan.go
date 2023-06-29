@@ -5,8 +5,8 @@ import (
 
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/dataset"
-	"fpetkovski/tsdb-parquet/db"
+	"Shopify/thanos-parquet-engine/dataset"
+	"Shopify/thanos-parquet-engine/db"
 )
 
 type Scanner struct {

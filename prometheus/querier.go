@@ -7,9 +7,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/compute"
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/schema"
+	"Shopify/thanos-parquet-engine/compute"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/schema"
 )
 
 const seriesBatchSize = 32 * 1024

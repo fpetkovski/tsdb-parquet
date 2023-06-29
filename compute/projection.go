@@ -6,9 +6,9 @@ import (
 
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/dataset"
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/generic"
+	"Shopify/thanos-parquet-engine/dataset"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/generic"
 )
 
 type Projections struct {

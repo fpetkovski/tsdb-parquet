@@ -16,10 +16,10 @@ import (
 	"github.com/thanos-io/objstore/providers/gcs"
 	"gopkg.in/yaml.v3"
 
-	"fpetkovski/tsdb-parquet/compute"
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/schema"
-	"fpetkovski/tsdb-parquet/storage"
+	"Shopify/thanos-parquet-engine/compute"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/schema"
+	"Shopify/thanos-parquet-engine/storage"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")

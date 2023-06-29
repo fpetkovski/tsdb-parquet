@@ -12,7 +12,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
-	"fpetkovski/tsdb-parquet/storage"
+	"Shopify/thanos-parquet-engine/storage"
 )
 
 const (

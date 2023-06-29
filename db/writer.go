@@ -13,7 +13,7 @@ import (
 	"github.com/segmentio/parquet-go"
 	"golang.org/x/exp/slices"
 
-	"fpetkovski/tsdb-parquet/schema"
+	"Shopify/thanos-parquet-engine/schema"
 )
 
 const (
