@@ -102,7 +102,7 @@ func newColumnProjection(
 		pages:     pages,
 		pool:      pool,
 		loader:    loader,
-		section:   db.AsyncSection(section, 3),
+		section:   section,
 		currentReader: parquet.ValueReaderFunc(func(values []parquet.Value) (int, error) {
 			return 0, io.EOF
 		}),
@@ -147,7 +147,7 @@ func (p *columnProjection) nextBatch() ([]parquet.Value, error) {
 func (p *columnProjection) loadPages() error {
 	var err error
 	p.once.Do(func() {
-		err = p.section.LoadNext()
+		err = p.section.LoadAll()
 	})
 	return err
 }

@@ -74,7 +74,7 @@ func (s section) LoadNext() error {
 }
 
 func (s section) LoadAll() error {
-	_, err := io.Copy(s.bytes, s.reader)
+	_, err := io.CopyBuffer(s.bytes, s.reader, s.readBuffer)
 	return err
 }
 
