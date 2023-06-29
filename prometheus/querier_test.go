@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/schema"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/schema"
 )
 
 func TestQuerier(t *testing.T) {

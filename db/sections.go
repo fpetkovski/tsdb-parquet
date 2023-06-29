@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"fpetkovski/tsdb-parquet/storage"
+	"Shopify/thanos-parquet-engine/storage"
 )
 
 var errSectionNotFound = errors.New("section not found")

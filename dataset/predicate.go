@@ -3,7 +3,7 @@ package dataset
 import (
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/db"
+	"Shopify/thanos-parquet-engine/db"
 )
 
 type Predicate interface {

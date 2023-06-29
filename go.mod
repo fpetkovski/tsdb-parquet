@@ -1,4 +1,4 @@
-module fpetkovski/tsdb-parquet
+module Shopify/thanos-parquet-engine
 
 go 1.19
 

@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/schollz/progressbar/v3"
 
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/schema"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/schema"
 
 	_ "net/http/pprof"
 

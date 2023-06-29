@@ -6,7 +6,7 @@ import (
 
 	"github.com/segmentio/parquet-go"
 
-	"fpetkovski/tsdb-parquet/db"
+	"Shopify/thanos-parquet-engine/db"
 )
 
 type RowFilter interface {

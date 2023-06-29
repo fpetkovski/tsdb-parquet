@@ -6,9 +6,9 @@ import (
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
 
-	"fpetkovski/tsdb-parquet/dataset"
-	"fpetkovski/tsdb-parquet/db"
-	"fpetkovski/tsdb-parquet/pqtest"
+	"Shopify/thanos-parquet-engine/dataset"
+	"Shopify/thanos-parquet-engine/db"
+	"Shopify/thanos-parquet-engine/pqtest"
 )
 
 func TestScan(t *testing.T) {

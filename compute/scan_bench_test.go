@@ -10,7 +10,7 @@ import (
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
 
-	"fpetkovski/tsdb-parquet/pqtest"
+	"Shopify/thanos-parquet-engine/pqtest"
 )
 
 func BenchmarkScanner_Scan(b *testing.B) {

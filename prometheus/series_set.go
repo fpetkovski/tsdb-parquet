@@ -5,7 +5,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"fpetkovski/tsdb-parquet/compute"
+	"Shopify/thanos-parquet-engine/compute"
 )
 
 type seriesSet struct {

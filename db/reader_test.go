@@ -12,7 +12,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
-	"fpetkovski/tsdb-parquet/schema"
+	"Shopify/thanos-parquet-engine/schema"
 )
 
 func TestSectionLoading(t *testing.T) {
