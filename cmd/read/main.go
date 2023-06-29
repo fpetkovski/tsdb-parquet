@@ -40,16 +40,6 @@ func main() {
 			pprof.WriteHeapProfile(f)
 		}()
 	}
-	if *tracefile != "" {
-		f, err := os.Create(*tracefile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := trace.Start(f); err != nil {
-			log.Fatal(err)
-		}
-		defer trace.Stop()
-	}
 
 	config := storage.GCSConfig{
 		Bucket: "shopify-o11y-metrics-scratch",
@@ -89,13 +79,23 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
+	if *tracefile != "" {
+		f, err := os.Create(*tracefile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := trace.Start(f); err != nil {
+			log.Fatal(err)
+		}
+		defer trace.Stop()
+	}
 
 	fmt.Println("Scanning...")
 	scanStart := time.Now()
 	scanner := compute.NewScanner(pqFile, reader.SectionLoader(),
 		//compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(1686873600000)),
 		//compute.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(1687046400000)),
-		compute.Equals(labels.MetricName, "nginx_ingress_controller_request_duration_seconds_bucket"),
+		compute.Equals(labels.MetricName, "container_network_receive_packets_total"),
 		//compute.Equals("namespace", "fbs-production"),
 	)
 	selections, err := scanner.Select()
