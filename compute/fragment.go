@@ -11,5 +11,6 @@ type Batch [][]parquet.Value
 type Fragment interface {
 	io.Closer
 	NextBatch() (Batch, error)
+	MaxBatchSize() int64
 	Release(Batch)
 }

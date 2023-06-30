@@ -37,7 +37,7 @@ type FileReader struct {
 	file       *parquet.File
 	dataReader io.ReaderAt
 
-	sectionLoader *sections
+	sections *sections
 }
 
 func NewFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOpt) (*FileReader, error) {
@@ -71,9 +71,9 @@ func NewFileReader(partName string, bucket objstore.Bucket, opts ...FileReaderOp
 	//}
 
 	reader := &FileReader{
-		size:          dataFileAtts.Size,
-		dataReader:    dataReader,
-		sectionLoader: fsSectionLoader,
+		size:       dataFileAtts.Size,
+		dataReader: dataReader,
+		sections:   fsSectionLoader,
 	}
 
 	return reader, nil
@@ -90,11 +90,11 @@ func applyOpts(opts []FileReaderOpt) fileReaderOpts {
 }
 
 func (r *FileReader) SectionLoader() SectionLoader {
-	return r.sectionLoader
+	return r.sections
 }
 
 func (r *FileReader) ReadAt(p []byte, off int64) (n int, err error) {
-	n, err = r.sectionLoader.ReadAt(p, off)
+	n, err = r.sections.ReadAt(p, off)
 	if err == errSectionNotFound {
 		return r.dataReader.ReadAt(p, off)
 	}
@@ -106,7 +106,7 @@ func (r *FileReader) FileSize() int64 {
 }
 
 func (r *FileReader) Close() error {
-	return r.sectionLoader.Close()
+	return r.sections.Close()
 }
 
 func readMetadata(metadataFile string, bucket objstore.Bucket) (*metadata.FileMetaData, error) {

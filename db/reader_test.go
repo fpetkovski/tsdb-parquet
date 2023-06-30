@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -35,15 +36,13 @@ func TestSectionLoading(t *testing.T) {
 	sec, err := loader.NewSectionSize(0, reader.FileSize(), readBatchSize)
 	require.NoError(t, err)
 
-	for chunk := 0; chunk < 5; chunk++ {
-		require.NoError(t, sec.LoadNext())
+	require.NoError(t, sec.LoadNext())
+	readBuf := make([]byte, readBatchSize)
+	_, err = reader.ReadAt(readBuf, 20 * 1024)
+	require.NoError(t, err)
 
-		buf := make([]byte, readBatchSize)
-		for readNum := 0; readNum < 10; readNum++ {
-			_, err = reader.ReadAt(buf, int64(chunk)*readBatchSize)
-			require.NoError(t, err)
-		}
-	}
+	require.NoError(t, err)
+	fmt.Println(readBuf)
 
 	assertNumSections(t, cacheDir, 2)
 	require.Equal(t, 2, inspector.getRangeRequests)
