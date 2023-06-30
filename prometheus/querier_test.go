@@ -17,50 +17,163 @@ import (
 )
 
 func TestQuerier(t *testing.T) {
-	series := []labels.Labels{
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "1"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "2"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "0"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "1"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "2"),
+	cases := []struct {
+		name      string
+		series    []labels.Labels
+		batchSize int64
+		numChunks int
+		expected  []labels.Labels
+	}{
+		{
+			name:      "1 series with batch size 1",
+			batchSize: 1,
+			series: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings(schema.SeriesIDColumn, "0", "instance", "0"),
+			},
+		},
+		{
+			name:      "3 series with batch size 2",
+			batchSize: 2,
+			series: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "0"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings(schema.SeriesIDColumn, "0", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "2", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "1", "instance", "1"),
+			},
+		},
+		{
+			name:      "3 series with batch size 1",
+			batchSize: 1,
+			series: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "0"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings(schema.SeriesIDColumn, "0", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "2", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "1", "instance", "1"),
+			},
+		},
+		{
+			name:      "6 series with batch size 2",
+			batchSize: 2,
+			series: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "2"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "2"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings(schema.SeriesIDColumn, "0", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "3", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "1", "instance", "1"),
+				labels.FromStrings(schema.SeriesIDColumn, "4", "instance", "1"),
+				labels.FromStrings(schema.SeriesIDColumn, "2", "instance", "2"),
+				labels.FromStrings(schema.SeriesIDColumn, "5", "instance", "2"),
+			},
+		},
+		{
+			name:      "6 series with batch size 3",
+			batchSize: 3,
+			series: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "api-server", "instance", "2"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "0"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "1"),
+				labels.FromStrings(labels.MetricName, "http_requests_total", "job", "kubelet", "instance", "2"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings(schema.SeriesIDColumn, "0", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "3", "instance", "0"),
+				labels.FromStrings(schema.SeriesIDColumn, "1", "instance", "1"),
+				labels.FromStrings(schema.SeriesIDColumn, "4", "instance", "1"),
+				labels.FromStrings(schema.SeriesIDColumn, "2", "instance", "2"),
+				labels.FromStrings(schema.SeriesIDColumn, "5", "instance", "2"),
+			},
+		},
 	}
 
-	dir := t.TempDir()
-	writer := db.NewWriter(dir, []string{labels.MetricName, "job", "instance"})
-	for i, lbls := range series {
-		for ts := int64(0); ts < 3; ts++ {
-			chunk := schema.Chunk{Labels: lbls, SeriesID: int64(i), MinT: ts * 100, MaxT: (ts + 1) * 100}
-			require.NoError(t, writer.Write(chunk))
-		}
-	}
-	require.NoError(t, writer.Close())
-	require.NoError(t, writer.Compact())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := createParquetFile(t, c.series)
 
+			pqFile, reader, err := openParquetFile(dir, t.TempDir())
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			q, err := NewQuerier(ctx, pqFile, reader.SectionLoader(), math.MinInt64, math.MaxInt64, WithLabelsBatchSize(c.batchSize))
+			require.NoError(t, err)
+
+			matchers := []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http_requests_total"),
+			}
+			hints := &storage.SelectHints{Grouping: []string{"instance"}}
+			sset := q.Select(false, hints, matchers...)
+			result, err := expandSeries(sset)
+			require.NoError(t, err)
+			require.Equal(t, result, c.expected)
+		})
+	}
+}
+
+func openParquetFile(dir string, cacheDir string) (*parquet.File, *db.FileReader, error) {
 	bucket, err := filesystem.NewBucket(dir)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	cacheDir := t.TempDir()
 	reader, err := db.NewFileReader("compact", bucket, db.WithSectionCacheDir(cacheDir))
-	require.NoError(t, err)
-	defer reader.Close()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	fmt.Println("Opening parquet file")
 	pqFile, err := parquet.OpenFile(reader, reader.FileSize())
-	require.NoError(t, err)
-
-	q, err := NewQuerier(context.Background(), pqFile, reader.SectionLoader(), math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "http_requests_total"),
+	if err != nil {
+		return nil, nil, err
 	}
-	hints := &storage.SelectHints{
-		Grouping: []string{"instance"},
+
+	return pqFile, reader, nil
+}
+
+func createParquetFile(t *testing.T, sset []labels.Labels) string {
+	const numChunks = 3
+
+	dir := t.TempDir()
+	writer := db.NewWriter(dir, []string{labels.MetricName, "job", "instance"})
+	minTime := int64(0)
+	for iChunk := 0; iChunk < numChunks; iChunk++ {
+		for iSeries, s := range sset {
+			chunk := schema.Chunk{
+				Labels:   s,
+				SeriesID: int64(iSeries),
+				MinT:     minTime,
+				MaxT:     minTime + 60,
+			}
+			require.NoError(t, writer.Write(chunk))
+		}
+		minTime += 60
 	}
-	sset := q.Select(false, hints, matchers...)
+	require.NoError(t, writer.Close())
+	require.NoError(t, writer.Compact())
+	return dir
+}
+
+func expandSeries(sset storage.SeriesSet) ([]labels.Labels, error) {
+	var result []labels.Labels
 	for sset.Next() {
-		fmt.Println(sset.At().Labels())
+		result = append(result, sset.At().Labels().Copy())
 	}
-	require.NoError(t, sset.Err())
+	return result, sset.Err()
 }

@@ -12,18 +12,39 @@ import (
 	"Shopify/thanos-parquet-engine/schema"
 )
 
-const seriesBatchSize = 32 * 1024
+const (
+	defaultLabelsBatchSize = 32 * 1024
+	defaultChunksBatchSize = 1024
+)
 
-func NewQuerier(ctx context.Context, file *parquet.File, sectionLoader db.SectionLoader, mint, maxt int64) (storage.Querier, error) {
+type QuerierOpts func(*querier)
+
+func WithLabelsBatchSize(val int64) QuerierOpts {
+	return func(q *querier) {
+		q.labelsBatchSize = val
+	}
+}
+
+func NewQuerier(
+	ctx context.Context,
+	file *parquet.File,
+	sectionLoader db.SectionLoader,
+	mint, maxt int64,
+	opts ...QuerierOpts,
+) (storage.Querier, error) {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &querier{
+		q := &querier{
 			ctx:  ctx,
 			mint: mint,
 			maxt: maxt,
 
 			file:          file,
 			sectionLoader: sectionLoader,
-		}, nil
+		}
+		for _, opt := range opts {
+			opt(q)
+		}
+		return q, nil
 	})(ctx, mint, maxt)
 }
 
@@ -34,6 +55,8 @@ type querier struct {
 
 	file          *parquet.File
 	sectionLoader db.SectionLoader
+
+	labelsBatchSize int64
 }
 
 func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -50,15 +73,15 @@ func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
-	plan := compute.UniqueByColumn(0, compute.ProjectColumns(
+	labelColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
+	labelsProjection := compute.UniqueByColumn(0, compute.ProjectColumns(
 		selection[0],
 		q.sectionLoader,
-		seriesBatchSize,
-		projectionColumns...),
-	)
+		q.labelsBatchSize,
+		labelColumns...,
+	))
 
-	return newSeriesSet(plan, projectionColumns)
+	return newSeriesSet(labelColumns, labelsProjection)
 }
 
 func (q querier) Close() error { return nil }
