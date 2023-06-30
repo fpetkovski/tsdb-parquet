@@ -94,6 +94,35 @@ func TestProjectColumns(t *testing.T) {
 			}},
 		},
 		{
+			name: "back to back pages",
+			rows: [][]pqtest.Row{{
+				pqtest.TwoColumnRow("val1", "val1"),
+				pqtest.TwoColumnRow("val1", "val2"),
+			}, {
+				pqtest.TwoColumnRow("val1", "val3"),
+				pqtest.TwoColumnRow("val1", "val4"),
+			}, {
+				pqtest.TwoColumnRow("val2", "val5"),
+				pqtest.TwoColumnRow("val1", "val6"),
+			}, {
+				pqtest.TwoColumnRow("val2", "val7"),
+				pqtest.TwoColumnRow("val2", "val8"),
+			}, {
+				pqtest.TwoColumnRow("val2", "val9"),
+			}},
+			columns:   []string{"ColumnB"},
+			chunkSize: 2,
+			selection: []dataset.PickRange{dataset.Pick(2, 4), dataset.Pick(4, 6), dataset.Pick(6, 8)},
+
+			expected: []Batch{{
+				{pqVal("val3", 1), pqVal("val4", 1)},
+			}, {
+				{pqVal("val5", 1), pqVal("val6", 1)},
+			}, {
+				{pqVal("val7", 1), pqVal("val8", 1)},
+			}, },
+		},
+		{
 			name: "two column projection",
 			rows: [][]pqtest.Row{{
 				pqtest.TwoColumnRow("val1", "val1"),

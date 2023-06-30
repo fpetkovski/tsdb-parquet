@@ -21,6 +21,7 @@ type pageSelection struct {
 
 type selectedPages struct {
 	currentRowIndex       int64
+	lastReadRowIndex      int64
 	currentSelectionIndex int64
 	selected              []pageSelection
 	pages                 parquet.Pages
@@ -66,9 +67,8 @@ func (p *selectedPages) ReadPage() (parquet.Page, error) {
 	if p.currentSelectionIndex == int64(len(p.selected)) {
 		return nil, io.EOF
 	}
-	var pageRows rowRange
-	pageRows = p.selected[p.currentSelectionIndex].rowRange
-	if pageRows.from > p.currentRowIndex {
+	pageRows := p.selected[p.currentSelectionIndex].rowRange
+	if pageRows.from > p.lastReadRowIndex {
 		err := p.pages.SeekToRow(pageRows.from)
 		if err != nil {
 			return nil, err
@@ -80,6 +80,7 @@ func (p *selectedPages) ReadPage() (parquet.Page, error) {
 		return nil, err
 	}
 	p.currentRowIndex = pageRows.from
+	p.lastReadRowIndex = pageRows.to
 	p.currentSelectionIndex++
 
 	tail := page.Slice(0, pageRows.length())
