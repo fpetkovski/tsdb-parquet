@@ -119,15 +119,15 @@ func (w *Writer) Compact() error {
 	if err != nil {
 		return errors.Wrap(err, "failed creating output file")
 	}
-	rowGroups := make([]parquet.RowGroup, 0)
-	for _, reader := range pqFiles {
-		if reader.NumRows() > 0 {
-			rowGroups = append(rowGroups, reader.RowGroups()...)
+	readers := make([]parquet.RowGroup, 0)
+	for _, pqFile := range pqFiles {
+		for _, rowGroup := range pqFile.RowGroups() {
+			readers = append(readers, rowGroup)
 		}
 	}
 
 	mergeGroups, err := parquet.MergeRowGroups(
-		rowGroups,
+		readers,
 		w.schema.ParquetSchema(),
 		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
 	)

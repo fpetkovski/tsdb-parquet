@@ -16,6 +16,11 @@ const (
 	MinTColumn       = "__mint"
 	MaxTColumn       = "__maxt"
 	ChunkBytesColumn = "__chunk_bytes"
+
+	SeriesIDPos = 0
+	MinTPos     = 1
+	MaxTPos     = 2
+	ChunkPos    = 3
 )
 
 type Chunk struct {
@@ -30,16 +35,6 @@ type Chunk struct {
 	MaxT int64
 	// ChunkBytes are the encoded bytes of the chunk.
 	ChunkBytes []byte
-}
-
-func NewChunk(seriesID int64, minT int64, maxT int64, labels labels.Labels, ChunkBytes []byte) *Chunk {
-	return &Chunk{
-		SeriesID:   seriesID,
-		MinT:       minT,
-		MaxT:       maxT,
-		Labels:     labels,
-		ChunkBytes: ChunkBytes,
-	}
 }
 
 type chunkLabels []string
@@ -107,10 +102,10 @@ func (c *ChunkSchema) ParquetSchema() *parquet.Schema {
 func (c *ChunkSchema) MakeChunkRow(chunk Chunk) parquet.Row {
 	row := make(parquet.Row, 4, len(c.labels)+4)
 
-	row[0] = parquet.Int64Value(chunk.SeriesID).Level(0, 0, 0)
-	row[1] = parquet.Int64Value(chunk.MinT).Level(0, 0, 1)
-	row[2] = parquet.Int64Value(chunk.MaxT).Level(0, 0, 2)
-	row[3] = parquet.ByteArrayValue(chunk.ChunkBytes).Level(0, 0, 3)
+	row[0] = parquet.Int64Value(chunk.SeriesID).Level(0, 0, SeriesIDPos)
+	row[1] = parquet.Int64Value(chunk.MinT).Level(0, 0, MinTPos)
+	row[2] = parquet.Int64Value(chunk.MaxT).Level(0, 0, MaxTPos)
+	row[3] = parquet.ByteArrayValue(chunk.ChunkBytes).Level(0, 0, ChunkPos)
 
 	for labelIndex, labelName := range c.labels {
 		labelVal := chunk.Labels.Get(labelName)

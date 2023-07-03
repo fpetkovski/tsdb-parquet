@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/segmentio/parquet-go"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/gcs"
 	"gopkg.in/yaml.v3"
 
@@ -42,7 +43,7 @@ func main() {
 	}
 
 	config := storage.GCSConfig{
-		Bucket: "shopify-o11y-metrics-scratch",
+		Bucket: "shopify-thanos-storage-staging",
 	}
 	conf, err := yaml.Marshal(config)
 	if err != nil {
@@ -58,6 +59,11 @@ func main() {
 	//if err != nil {
 	//	log.Fatalln(err)
 	//}
+
+	bucket.Iter(context.Background(), "", func(name string) error {
+		fmt.Println(name)
+		return nil
+	}, objstore.WithRecursiveIter)
 
 	reader, err := db.NewFileReader("compact-2.7", bucket)
 	if err != nil {
