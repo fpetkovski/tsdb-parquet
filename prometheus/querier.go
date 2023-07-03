@@ -17,38 +17,42 @@ const (
 	defaultChunksBatchSize = 1024
 )
 
-type QuerierOpts func(*querier)
+type parquetFile struct {
+	file          *parquet.File
+	sectionLoader db.SectionLoader
+	opts          []QuerierOpts
+}
+
+func NewParquetFile(file *parquet.File, sectionLoader db.SectionLoader, opts ...QuerierOpts) storage.Queryable {
+	return &parquetFile{file: file, sectionLoader: sectionLoader, opts: opts}
+}
+
+func (q parquetFile) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	pq := &parquetFileQuerier{
+		ctx:  ctx,
+		mint: mint,
+		maxt: maxt,
+
+		file:          q.file,
+		sectionLoader: q.sectionLoader,
+
+		labelsBatchSize: defaultLabelsBatchSize,
+	}
+	for _, opt := range q.opts {
+		opt(pq)
+	}
+	return pq, nil
+}
+
+type QuerierOpts func(*parquetFileQuerier)
 
 func WithLabelsBatchSize(val int64) QuerierOpts {
-	return func(q *querier) {
+	return func(q *parquetFileQuerier) {
 		q.labelsBatchSize = val
 	}
 }
 
-func NewQuerier(
-	ctx context.Context,
-	file *parquet.File,
-	sectionLoader db.SectionLoader,
-	mint, maxt int64,
-	opts ...QuerierOpts,
-) (storage.Querier, error) {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		q := &querier{
-			ctx:  ctx,
-			mint: mint,
-			maxt: maxt,
-
-			file:          file,
-			sectionLoader: sectionLoader,
-		}
-		for _, opt := range opts {
-			opt(q)
-		}
-		return q, nil
-	})(ctx, mint, maxt)
-}
-
-type querier struct {
+type parquetFileQuerier struct {
 	ctx  context.Context
 	mint int64
 	maxt int64
@@ -59,7 +63,7 @@ type querier struct {
 	labelsBatchSize int64
 }
 
-func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *parquetFileQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	opts := []compute.ScannerOption{
 		compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
 		compute.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(q.maxt)),
@@ -84,14 +88,14 @@ func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.
 	return newSeriesSet(labelColumns, labelsProjection)
 }
 
-func (q querier) Close() error { return nil }
+func (q *parquetFileQuerier) Close() error { return nil }
 
-func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *parquetFileQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *parquetFileQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	//TODO implement me
 	panic("implement me")
 }

@@ -112,7 +112,8 @@ func TestQuerier(t *testing.T) {
 			require.NoError(t, err)
 
 			ctx := context.Background()
-			q, err := NewQuerier(ctx, pqFile, reader.SectionLoader(), math.MinInt64, math.MaxInt64, WithLabelsBatchSize(c.batchSize))
+			pqStorage := NewParquetFile(pqFile, reader.SectionLoader(), WithLabelsBatchSize(c.batchSize))
+			q, err := pqStorage.Querier(ctx, math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 
 			matchers := []*labels.Matcher{
@@ -148,7 +149,10 @@ func openParquetFile(dir string, cacheDir string) (*parquet.File, *db.FileReader
 }
 
 func createParquetFile(t *testing.T, sset []labels.Labels) string {
-	const numChunks = 3
+	const (
+		numChunks = 3
+		oneMinute = 60_000
+	)
 
 	dir := t.TempDir()
 	writer := db.NewWriter(dir, []string{labels.MetricName, "job", "instance"})
@@ -159,11 +163,11 @@ func createParquetFile(t *testing.T, sset []labels.Labels) string {
 				Labels:   s,
 				SeriesID: int64(iSeries),
 				MinT:     minTime,
-				MaxT:     minTime + 60,
+				MaxT:     minTime + oneMinute,
 			}
 			require.NoError(t, writer.Write(chunk))
 		}
-		minTime += 60
+		minTime += oneMinute
 	}
 	require.NoError(t, writer.Close())
 	require.NoError(t, writer.Compact())

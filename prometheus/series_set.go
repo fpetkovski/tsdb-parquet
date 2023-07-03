@@ -75,7 +75,6 @@ func (s *seriesSet) Warnings() storage.Warnings { return nil }
 
 type series struct {
 	labels labels.Labels
-	chunks chan chunkenc.Chunk
 }
 
 func (s series) Labels() labels.Labels {
