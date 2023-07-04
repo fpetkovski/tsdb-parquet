@@ -110,9 +110,9 @@ func main() {
 			if err := writer.Write(chunk); err != nil {
 				log.Fatal(err)
 			}
-			if err := bar.Add(1); err != nil {
-				log.Fatal(err)
-			}
+		}
+		if err := bar.Add(1); err != nil {
+			log.Fatal(err)
 		}
 	}
 
