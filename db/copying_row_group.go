@@ -25,13 +25,13 @@ func newCopyingRows(rows parquet.Rows) *copyingRows {
 }
 
 func (b copyingRows) ReadRows(rows []parquet.Row) (int, error) {
-	rowClones := make([]parquet.Row, len(rows))
-	n, err := b.Rows.ReadRows(rowClones)
+	rowCopies := make([]parquet.Row, len(rows))
+	n, err := b.Rows.ReadRows(rowCopies)
 	if err != nil {
 		return n, err
 	}
-	for i, row := range rowClones[:n] {
-		rows[i] = row.Clone()
+	for i, rowCopy := range rowCopies[:n] {
+		rows[i] = rowCopy.Clone()
 	}
 	return n, err
 }

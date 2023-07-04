@@ -122,7 +122,7 @@ func (w *Writer) Compact() error {
 	readers := make([]parquet.RowGroup, 0)
 	for _, pqFile := range pqFiles {
 		for _, rowGroup := range pqFile.RowGroups() {
-			readers = append(readers, rowGroup)
+			readers = append(readers, newCopyingRowGroup(rowGroup))
 		}
 	}
 
