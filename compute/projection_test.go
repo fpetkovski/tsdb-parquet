@@ -120,7 +120,7 @@ func TestProjectColumns(t *testing.T) {
 				{pqVal("val5", 1), pqVal("val6", 1)},
 			}, {
 				{pqVal("val7", 1), pqVal("val8", 1)},
-			}, },
+			}},
 		},
 		{
 			name: "two column projection",

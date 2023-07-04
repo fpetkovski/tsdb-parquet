@@ -2,7 +2,6 @@ package compute
 
 import (
 	"context"
-	"sync"
 )
 
 type maybeBatch struct {
@@ -13,7 +12,6 @@ type maybeBatch struct {
 type Concurrent struct {
 	fragment Fragment
 
-	once   sync.Once
 	buffer chan maybeBatch
 
 	ctx    context.Context
