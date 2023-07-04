@@ -18,7 +18,7 @@ type Projections struct {
 }
 
 func ProjectColumns(selection dataset.SelectionResult, reader db.SectionLoader, batchSize int64, columnNames ...string) Projections {
-	pool := newValuesPool(int(batchSize))
+	pool := newValuesPool(batchSize)
 	projections := make([]*columnProjection, 0, len(columnNames))
 	for _, columnName := range columnNames {
 		column, ok := selection.RowGroup().Schema().Lookup(columnName)
@@ -56,7 +56,7 @@ func (p Projections) Release(batch Batch) {
 	}
 }
 
-func (p Projections) BatchSize() int64 {
+func (p Projections) MaxBatchSize() int64 {
 	return p.batchSize
 }
 

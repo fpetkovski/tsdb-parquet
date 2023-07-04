@@ -18,8 +18,8 @@ func UniqueByColumn(byColumnIndex int, projections Projections) *Unique {
 		projection:     projections,
 		distinctColumn: byColumnIndex,
 
-		pool:       newValuesPool(int(projections.BatchSize())),
-		batchRows:  make([]int, int(projections.BatchSize())),
+		pool:       newValuesPool(projections.MaxBatchSize()),
+		batchRows:  make([]int, int(projections.MaxBatchSize())),
 		seenValues: make(map[parquet.Value]struct{}),
 	}
 }
@@ -52,6 +52,10 @@ func (d *Unique) NextBatch() (Batch, error) {
 	}
 
 	return outputBatch, nil
+}
+
+func (d *Unique) MaxBatchSize() int64 {
+	return d.projection.MaxBatchSize()
 }
 
 func (d *Unique) Release(batch Batch) {

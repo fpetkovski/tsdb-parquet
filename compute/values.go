@@ -10,11 +10,11 @@ type valuesPool struct {
 	mu sync.Mutex
 
 	peak   int
-	size   int
+	size   int64
 	values [][]parquet.Value
 }
 
-func newValuesPool(size int) *valuesPool {
+func newValuesPool(size int64) *valuesPool {
 	return &valuesPool{
 		size:   size,
 		values: make([][]parquet.Value, 0),
