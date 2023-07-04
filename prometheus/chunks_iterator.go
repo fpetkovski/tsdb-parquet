@@ -10,7 +10,7 @@ type constValIterator struct {
 }
 
 func (c *constValIterator) Next() chunkenc.ValueType {
-	c.ts += 30
+	c.ts += 30_000
 	return chunkenc.ValFloat
 }
 
