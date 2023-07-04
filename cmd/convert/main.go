@@ -18,7 +18,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/segmentio/parquet-go"
 )
 
 func main() {
@@ -85,9 +84,9 @@ func main() {
 	)
 
 	bar := progressbar.Default(numPostings)
-	rows := make([]parquet.Row, 0, 1000)
+	chunkBuffer := make([]schema.Chunk, 0, 1000)
 	for ps.Next() {
-		rows = rows[:0]
+		chunkBuffer = chunkBuffer[:0]
 		seriesID++
 		lblBuilder.Reset()
 		if err := ir.Series(ps.At(), &lblBuilder, &chks); err != nil {
@@ -102,14 +101,15 @@ func main() {
 			}
 			chunk := schema.Chunk{
 				SeriesID:   seriesID,
-				Labels:     lbls,
+				Labels:     lbls.Map(),
 				MinT:       chunkMeta.MinTime,
 				MaxT:       chunkMeta.MaxTime,
 				ChunkBytes: chk.Bytes(),
 			}
-			if err := writer.Write(chunk); err != nil {
-				log.Fatal(err)
-			}
+			chunkBuffer = append(chunkBuffer, chunk)
+		}
+		if err := writer.Write(chunkBuffer); err != nil {
+			log.Fatal(err)
 		}
 		if err := bar.Add(1); err != nil {
 			log.Fatal(err)

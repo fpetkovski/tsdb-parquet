@@ -29,9 +29,10 @@ var partRegex = regexp.MustCompile(`part.(\d+).parquet`)
 type WriterOption func(*Writer)
 
 type Writer struct {
-	dir    string
-	partID int
-	buffer *parquet.GenericBuffer[any]
+	dir        string
+	partID     int
+	buffer     *parquet.GenericBuffer[any]
+	rowsBuffer []parquet.Row
 
 	sortingColumns []parquet.SortingColumn
 	schema         *schema.ChunkSchema
@@ -63,6 +64,7 @@ func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Write
 		bloomFilters:   bloomFilters,
 		schema:         schema.MakeChunkSchema(labelColumns),
 		pageBufferSize: MaxPageSize,
+		rowsBuffer:     make([]parquet.Row, 0),
 	}
 	for _, opt := range option {
 		opt(writer)
@@ -72,8 +74,14 @@ func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Write
 	return writer
 }
 
-func (w *Writer) Write(chunk schema.Chunk) error {
-	if _, err := w.buffer.WriteRows([]parquet.Row{w.schema.MakeChunkRow(chunk)}); err != nil {
+func (w *Writer) Write(chunks []schema.Chunk) error {
+	defer func() {
+		w.rowsBuffer = w.rowsBuffer[:0]
+	}()
+	for _, chunk := range chunks {
+		w.rowsBuffer = append(w.rowsBuffer, w.schema.MakeChunkRow(chunk))
+	}
+	if _, err := w.buffer.WriteRows(w.rowsBuffer); err != nil {
 		return err
 	}
 
@@ -119,15 +127,15 @@ func (w *Writer) Compact() error {
 	if err != nil {
 		return errors.Wrap(err, "failed creating output file")
 	}
-	rowGroups := make([]parquet.RowGroup, 0)
-	for _, reader := range pqFiles {
-		if reader.NumRows() > 0 {
-			rowGroups = append(rowGroups, reader.RowGroups()...)
+	readers := make([]parquet.RowGroup, 0)
+	for _, pqFile := range pqFiles {
+		for _, rowGroup := range pqFile.RowGroups() {
+			readers = append(readers, newCopyingRowGroup(rowGroup))
 		}
 	}
 
 	mergeGroups, err := parquet.MergeRowGroups(
-		rowGroups,
+		readers,
 		w.schema.ParquetSchema(),
 		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
 	)
@@ -177,6 +185,7 @@ func (w *Writer) flushBufferToFile(partName string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 
 	sort.Sort(w.buffer)
 	pqWriter := w.openWriter(f)
@@ -211,6 +220,8 @@ func (w *Writer) createMetadataFile(partName string) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
+
 	pqReader, err := file.NewParquetReader(f)
 	defer pqReader.Close()
 
