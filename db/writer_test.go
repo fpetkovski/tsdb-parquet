@@ -12,18 +12,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/segmentio/parquet-go"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/maps"
 
 	"Shopify/thanos-parquet-engine/db"
 	"Shopify/thanos-parquet-engine/schema"
 )
 
 func TestWriter(t *testing.T) {
-	chunkSeries := []storage.ChunkSeries{
-		newSeries(t, 47, labels.MetricName, "http_requests_total", "job", "api-server", "instance", "abc"),
-		newSeries(t, 47, labels.MetricName, "http_requests_total", "job", "api-server", "instance", "def"),
-		newSeries(t, 47, labels.MetricName, "http_requests_total", "job", "api-server", "instance", "ghi"),
-		newSeries(t, 47, labels.MetricName, "http_requests_total", "job", "api-server", "instance", "jke"),
+	instanceValues := []string{"abc", "def", "ghi", "jke"}
+	chunkSeries := make([]storage.ChunkSeries, 0, len(instanceValues))
+	for _, instanceVal := range instanceValues {
+		instanceSeries := newSeries(t, 47, labels.MetricName, "http_requests_total", "job", "api-server", "instance", instanceVal)
+		chunkSeries = append(chunkSeries, instanceSeries)
 	}
+
 	dir := createParquetFile(t, chunkSeries)
 	pqFile, err := openParquetFile(dir)
 	require.NoError(t, err)
@@ -31,6 +33,7 @@ func TestWriter(t *testing.T) {
 	readBatch := 30
 	nread := 0
 	for _, rowGroup := range pqFile.RowGroups() {
+		rowID := 0
 		rowGroupRows := rowGroup.Rows()
 		for {
 			rows := make([]parquet.Row, readBatch)
@@ -44,9 +47,15 @@ func TestWriter(t *testing.T) {
 			}
 
 			for _, row := range rows[:n] {
+				expectedInstance := rowID % len(instanceValues)
+				require.Equal(t, row[4].String(), "http_requests_total")
+				require.Equal(t, row[5].String(), instanceValues[expectedInstance])
+				require.Equal(t, row[6].String(), "api-server")
 				chk, err := chunkenc.FromData(chunkenc.EncXOR, row[schema.ChunkPos].ByteArray())
 				require.NoError(t, err)
 				require.Equal(t, 120, chk.NumSamples())
+
+				rowID++
 			}
 			nread += n
 		}
@@ -73,25 +82,32 @@ func openParquetFile(dir string) (*parquet.File, error) {
 }
 
 func createParquetFile(t testing.TB, series []storage.ChunkSeries) string {
+	allLabels := make(map[string]struct{})
+	for _, chunkSeries := range series {
+		for lblName := range chunkSeries.Labels().Map() {
+			allLabels[lblName] = struct{}{}
+		}
+	}
+
 	dir := t.TempDir()
-	writer := db.NewWriter(dir, []string{labels.MetricName, "job", "instance"})
+	writer := db.NewWriter(dir, maps.Keys(allLabels))
 	for i, chunkSeries := range series {
 		seriesChunks, err := storage.ExpandChunks(chunkSeries.Iterator(nil))
 		require.NoError(t, err)
 
-		chunks := make([]schema.Chunk, 0)
+		chunkRows := make([]schema.Chunk, 0)
 		for _, chk := range seriesChunks {
-			chunks = chunks[:0]
-			chunk := schema.Chunk{
+			chunkRows = chunkRows[:0]
+			chunkRow := schema.Chunk{
 				Labels:     chunkSeries.Labels().Map(),
 				SeriesID:   int64(i),
 				MinT:       chk.MinTime,
 				MaxT:       chk.MaxTime,
 				ChunkBytes: chk.Chunk.Bytes(),
 			}
-			chunks = append(chunks, chunk)
+			chunkRows = append(chunkRows, chunkRow)
 		}
-		require.NoError(t, writer.Write(chunks))
+		require.NoError(t, writer.Write(chunkRows))
 	}
 	require.NoError(t, writer.Close())
 	require.NoError(t, writer.Compact())
