@@ -12,31 +12,58 @@ import (
 	"Shopify/thanos-parquet-engine/schema"
 )
 
-const seriesBatchSize = 32 * 1024
+const (
+	defaultLabelsBatchSize = 32 * 1024
+	defaultChunksBatchSize = 1024
+)
 
-func NewQuerier(ctx context.Context, file *parquet.File, sectionLoader db.SectionLoader, mint, maxt int64) (storage.Querier, error) {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &querier{
-			ctx:  ctx,
-			mint: mint,
-			maxt: maxt,
-
-			file:          file,
-			sectionLoader: sectionLoader,
-		}, nil
-	})(ctx, mint, maxt)
+type parquetFile struct {
+	file          *parquet.File
+	sectionLoader db.SectionLoader
+	opts          []QuerierOpts
 }
 
-type querier struct {
+func NewParquetFile(file *parquet.File, sectionLoader db.SectionLoader, opts ...QuerierOpts) storage.Queryable {
+	return &parquetFile{file: file, sectionLoader: sectionLoader, opts: opts}
+}
+
+func (q parquetFile) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	pq := &parquetFileQuerier{
+		ctx:  ctx,
+		mint: mint,
+		maxt: maxt,
+
+		file:          q.file,
+		sectionLoader: q.sectionLoader,
+
+		labelsBatchSize: defaultLabelsBatchSize,
+	}
+	for _, opt := range q.opts {
+		opt(pq)
+	}
+	return pq, nil
+}
+
+type QuerierOpts func(*parquetFileQuerier)
+
+func WithLabelsBatchSize(val int64) QuerierOpts {
+	return func(q *parquetFileQuerier) {
+		q.labelsBatchSize = val
+	}
+}
+
+type parquetFileQuerier struct {
 	ctx  context.Context
 	mint int64
 	maxt int64
 
 	file          *parquet.File
 	sectionLoader db.SectionLoader
+
+	labelsBatchSize int64
 }
 
-func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *parquetFileQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	opts := []compute.ScannerOption{
 		compute.GreaterThanOrEqual(schema.MinTColumn, parquet.Int64Value(q.mint)),
 		compute.LessThanOrEqual(schema.MaxTColumn, parquet.Int64Value(q.maxt)),
@@ -50,25 +77,25 @@ func (q querier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	projectionColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
-	plan := compute.UniqueByColumn(0, compute.ProjectColumns(
+	labelColumns := append([]string{schema.SeriesIDColumn}, hints.Grouping...)
+	labelsProjection := compute.UniqueByColumn(0, compute.ProjectColumns(
 		selection[0],
 		q.sectionLoader,
-		seriesBatchSize,
-		projectionColumns...),
-	)
+		q.labelsBatchSize,
+		labelColumns...,
+	))
 
-	return newSeriesSet(plan, projectionColumns)
+	return newSeriesSet(labelColumns, labelsProjection)
 }
 
-func (q querier) Close() error { return nil }
+func (q *parquetFileQuerier) Close() error { return nil }
 
-func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *parquetFileQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *parquetFileQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	//TODO implement me
 	panic("implement me")
 }
