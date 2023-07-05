@@ -29,10 +29,9 @@ var partRegex = regexp.MustCompile(`part.(\d+).parquet`)
 type WriterOption func(*Writer)
 
 type Writer struct {
-	dir        string
-	partID     int
-	buffer     *parquet.GenericBuffer[any]
-	rowsBuffer []parquet.Row
+	dir    string
+	partID int
+	buffer *memBuffer
 
 	sortingColumns []parquet.SortingColumn
 	schema         *schema.ChunkSchema
@@ -42,13 +41,13 @@ type Writer struct {
 }
 
 func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Writer {
-	sortingColums := make([]parquet.SortingColumn, 0, len(labelColumns)+2)
-	sortingColums = append(sortingColums, parquet.Ascending(schema.MinTColumn))
-	sortingColums = append(sortingColums, parquet.Ascending(schema.MaxTColumn))
+	sortingColumns := make([]parquet.SortingColumn, 0, len(labelColumns)+2)
+	sortingColumns = append(sortingColumns, parquet.Ascending(schema.MinTColumn))
+	sortingColumns = append(sortingColumns, parquet.Ascending(schema.MaxTColumn))
 	for _, lbl := range labelColumns {
-		sortingColums = append(sortingColums, parquet.Ascending(lbl))
+		sortingColumns = append(sortingColumns, parquet.Ascending(lbl))
 	}
-	slices.SortFunc(sortingColums, func(a, b parquet.SortingColumn) bool {
+	slices.SortFunc(sortingColumns, func(a, b parquet.SortingColumn) bool {
 		return CompareColumns(a.Path()[0], b.Path()[0])
 	})
 
@@ -57,31 +56,25 @@ func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Write
 		bloomFilters = append(bloomFilters, parquet.SplitBlockFilter(10, lbl))
 	}
 
+	chunkSchema := schema.MakeChunkSchema(labelColumns)
 	writer := &Writer{
 		dir:            dir,
 		partID:         -1,
-		sortingColumns: sortingColums,
+		sortingColumns: sortingColumns,
 		bloomFilters:   bloomFilters,
-		schema:         schema.MakeChunkSchema(labelColumns),
+		schema:         chunkSchema,
 		pageBufferSize: MaxPageSize,
-		rowsBuffer:     make([]parquet.Row, 0),
+		buffer:         newMemBuffer(chunkSchema, sortingColumns, writeBufferSize),
 	}
 	for _, opt := range option {
 		opt(writer)
 	}
-	writer.openBuffer()
 
 	return writer
 }
 
-func (w *Writer) Write(chunks []schema.Chunk) error {
-	defer func() {
-		w.rowsBuffer = w.rowsBuffer[:0]
-	}()
-	for _, chunk := range chunks {
-		w.rowsBuffer = append(w.rowsBuffer, w.schema.MakeChunkRow(chunk))
-	}
-	if _, err := w.buffer.WriteRows(w.rowsBuffer); err != nil {
+func (w *Writer) Write(chunk schema.Chunk) error {
+	if _, err := w.buffer.Write(chunk); err != nil {
 		return err
 	}
 
@@ -204,14 +197,6 @@ func (w *Writer) openWriter(f *os.File) *parquet.GenericWriter[any] {
 		parquet.PageBufferSize(w.pageBufferSize),
 		parquet.DataPageStatistics(true),
 		parquet.BloomFilters(w.bloomFilters...),
-	)
-}
-
-func (w *Writer) openBuffer() {
-	w.buffer = parquet.NewGenericBuffer[any](
-		w.schema.ParquetSchema(),
-		parquet.ColumnBufferCapacity(writeBufferSize),
-		parquet.SortingRowGroupConfig(parquet.SortingColumns(w.sortingColumns...)),
 	)
 }
 

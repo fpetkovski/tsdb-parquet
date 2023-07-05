@@ -158,7 +158,6 @@ func createParquetFile(t *testing.T, sset []labels.Labels) string {
 	writer := db.NewWriter(dir, []string{labels.MetricName, "job", "instance"})
 	minTime := int64(0)
 	for iChunk := 0; iChunk < numChunks; iChunk++ {
-		chunks := make([]schema.Chunk, 0, len(sset))
 		for iSeries, s := range sset {
 			chunk := schema.Chunk{
 				Labels:   s.Map(),
@@ -166,9 +165,8 @@ func createParquetFile(t *testing.T, sset []labels.Labels) string {
 				MinT:     minTime,
 				MaxT:     minTime + oneMinute,
 			}
-			chunks = append(chunks, chunk)
+			require.NoError(t, writer.Write(chunk))
 		}
-		require.NoError(t, writer.Write(chunks))
 		minTime += oneMinute
 	}
 	require.NoError(t, writer.Close())

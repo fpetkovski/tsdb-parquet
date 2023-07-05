@@ -84,9 +84,7 @@ func main() {
 	)
 
 	bar := progressbar.Default(numPostings)
-	chunkBuffer := make([]schema.Chunk, 0, 1000)
 	for ps.Next() {
-		chunkBuffer = chunkBuffer[:0]
 		seriesID++
 		lblBuilder.Reset()
 		if err := ir.Series(ps.At(), &lblBuilder, &chks); err != nil {
@@ -106,10 +104,9 @@ func main() {
 				MaxT:       chunkMeta.MaxTime,
 				ChunkBytes: chk.Bytes(),
 			}
-			chunkBuffer = append(chunkBuffer, chunk)
-		}
-		if err := writer.Write(chunkBuffer); err != nil {
-			log.Fatal(err)
+			if err := writer.Write(chunk); err != nil {
+				log.Fatal(err)
+			}
 		}
 		if err := bar.Add(1); err != nil {
 			log.Fatal(err)

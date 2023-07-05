@@ -95,9 +95,7 @@ func createParquetFile(t testing.TB, series []storage.ChunkSeries) string {
 		seriesChunks, err := storage.ExpandChunks(chunkSeries.Iterator(nil))
 		require.NoError(t, err)
 
-		chunkRows := make([]schema.Chunk, 0)
 		for _, chk := range seriesChunks {
-			chunkRows = chunkRows[:0]
 			chunkRow := schema.Chunk{
 				Labels:     chunkSeries.Labels().Map(),
 				SeriesID:   int64(i),
@@ -105,9 +103,8 @@ func createParquetFile(t testing.TB, series []storage.ChunkSeries) string {
 				MaxT:       chk.MaxTime,
 				ChunkBytes: chk.Chunk.Bytes(),
 			}
-			chunkRows = append(chunkRows, chunkRow)
+			require.NoError(t, writer.Write(chunkRow))
 		}
-		require.NoError(t, writer.Write(chunkRows))
 	}
 	require.NoError(t, writer.Close())
 	require.NoError(t, writer.Compact())
