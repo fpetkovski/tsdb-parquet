@@ -84,6 +84,10 @@ type ChunkSchema struct {
 	labels []string
 }
 
+func (c *ChunkSchema) Labels() []string {
+	return c.labels
+}
+
 func MakeChunkSchema(lbls []string) *ChunkSchema {
 	sort.Strings(lbls)
 

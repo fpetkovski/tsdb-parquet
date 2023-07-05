@@ -60,10 +60,7 @@ func generatePart(dir string, numSeries int) error {
 	writer := NewWriter(dir, columns)
 	defer writer.Close()
 
-	chunks := make([]schema.Chunk, 0)
 	for i := 0; i < numSeries; i++ {
-		chunks = chunks[:0]
-
 		lblA := strconv.Itoa(i)
 		lblB := strconv.Itoa(i % 2)
 		lbls := labels.FromStrings("a", lblA, "b", lblB)
@@ -73,8 +70,7 @@ func generatePart(dir string, numSeries int) error {
 			MaxT:       100,
 			ChunkBytes: nil,
 		}
-		chunks = append(chunks, chunk)
-		if err := writer.Write(chunks); err != nil {
+		if err := writer.Write(chunk); err != nil {
 			return err
 		}
 	}
