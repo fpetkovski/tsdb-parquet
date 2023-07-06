@@ -41,6 +41,8 @@ type Writer struct {
 }
 
 func NewWriter(dir string, labelColumns []string, option ...WriterOption) *Writer {
+	sort.Strings(labelColumns)
+
 	sortingColumns := make([]parquet.SortingColumn, 0, len(labelColumns)+2)
 	sortingColumns = append(sortingColumns, parquet.Ascending(schema.MinTColumn))
 	sortingColumns = append(sortingColumns, parquet.Ascending(schema.MaxTColumn))
